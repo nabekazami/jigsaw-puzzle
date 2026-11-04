@@ -1446,6 +1446,7 @@
     /* ===== スマホモード =====
        タッチ操作だけの端末(スマホ・タブレット)では、自動でスマホモードになります。
        左メニューの「表示モード」(スマホモード時)、またはURLの末尾の mode=mobile / mode=pc / mode=auto で手動切り替えできます(端末ごとに記憶)。 */
+    const APP_VER = '2026-11-05 b'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
     const MODE_KEY = 'jigsaw_mode';
     let MODE_SET = 'auto';
     try {
@@ -3615,7 +3616,7 @@
     /* ===== スマホモードの初期設定 ===== */
     async function modeDlg() {
         const cur = { auto: '自動', mob: 'スマホモード', pc: 'PCモード' }[MODE_SET];
-        const v = await choose('<b class="fh">📱 表示モード</b><p>現在: ' + cur + '(' + (MOB ? 'スマホモード' : 'PCモード') + 'で表示中)</p><p class="em" style="font-size:12px">「自動」は、タッチ操作だけの端末ならスマホモードになります。<br>切り替えると、保存してから画面を読み込み直します。</p>', [['自動', 'auto'], ['スマホモード', 'mob'], ['PCモード', 'pc']], 'x');
+        const v = await choose('<b class="fh">📱 表示モード</b><p>現在: ' + cur + '(' + (MOB ? 'スマホモード' : 'PCモード') + 'で表示中)<br><small class="em">バージョン: ' + APP_VER + '</small></p><p class="em" style="font-size:12px">「自動」は、タッチ操作だけの端末ならスマホモードになります。<br>切り替えると、保存してから画面を読み込み直します。</p>', [['自動', 'auto'], ['スマホモード', 'mob'], ['PCモード', 'pc']], 'x');
         if (v === 'x' || v === MODE_SET)
             return;
         try {
