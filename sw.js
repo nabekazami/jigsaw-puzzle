@@ -2,7 +2,7 @@
    ・ネットにつながるときは、毎回最新のファイルを読み込みます(GitHubで更新すると、次の起動で反映)。
    ・つながらないときは、前回読み込んだファイルで起動します。
    ・画像やパズルの保存データは端末の中(ブラウザ内)にあり、ここでは扱いません。 */
-const CACHE = 'jigsaw-v1';
+const CACHE = 'jigsaw-v2';
 const FILES = ['./', './jigsaw.html', './manifest.json', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
 self.addEventListener('install', e => {
