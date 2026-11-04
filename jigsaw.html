@@ -1236,10 +1236,13 @@
         <hr class="mo">
         <button id="mS"><span class="ic">⚙</span><span class="lb"> アイコン設定</span></button>
         <hr>
+        <button id="mD"><span class="ic">📦</span><span class="lb"> データの受け渡し</span></button>
+        <hr>
         <button id="mF"><span class="ic">📁</span><span class="lb"> 保存先フォルダ</span></button>
         <hr>
         <small id="sl" class="em" style="word-break:break-all;cursor:pointer" title="クリックで表示用のフルパスを編集"></small>
         <input id="fi" type="file" accept="image/*" multiple hidden>
+        <input id="fz" type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden>
       </nav>
       <main>
         <section id="vImg" class="v">
@@ -1443,7 +1446,7 @@
     } ['Img', 'Pl', 'Gm'].forEach(k => $('v' + k).hidden = k != v); $('mI').classList.toggle('on', v == 'Img'); $('mP').classList.toggle('on', v == 'Pl'); if (v == 'Img' || v == 'Pl')
         renderList(v); }
     let SET = { ord: { Img: [], Pl: [] }, sort: { Img: 'manual', Pl: 'recent' }, hist: [], icons: {} }, dd = null, sst = 0;
-    function saveSet() { clearTimeout(sst); sst = setTimeout(() => { if (ST)
+    function saveSet() { SET.upd = Date.now(); clearTimeout(sst); sst = setTimeout(() => { if (ST)
         Promise.resolve(ST.putSet(SET)).catch(() => 0); }, 400); }
     const nm = (a, b) => a.name.localeCompare(b.name, 'ja') || a.n - b.n;
     /* 並び替え項目はここに追加すると増やせます(f: 比較関数) */
@@ -2561,7 +2564,7 @@
         zoom(f, e.clientX - r.left, e.clientY - r.top);
     };
     function pvZoom(f) { const pv = $('pv'), w = Math.max(100, Math.min(5000, (parseFloat(pv.style.width) || pv.clientWidth || 240) * f)); pv.style.width = w + 'px'; pv.style.height = (w * pv.naturalHeight / pv.naturalWidth) + 'px'; }
-    const MT = { mM: '表示モード', mA: '画像を追加', mI: '画像一覧', mP: 'プレイ中のパズル', mQ: 'ゲームを終了', mS: 'アイコン設定', mF: '保存先フォルダ' };
+    const MT = { mD: 'データの受け渡し', mM: '表示モード', mA: '画像を追加', mI: '画像一覧', mP: 'プレイ中のパズル', mQ: 'ゲームを終了', mS: 'アイコン設定', mF: '保存先フォルダ' };
     function mnTips() { const c = $('mn').classList.contains('cl'); for (const k in MT) {
         if (c)
             $(k).title = MT[k];
@@ -2909,7 +2912,7 @@
         await Promise.all(imgs.map(imgDim));
         (await ST.saves()).forEach(s => { s.img = s.img || s.id; saves[s.id] = s; });
         const so = await ST.getSet();
-        SET = { ord: { Img: [], Pl: [], ...(so && so.ord) }, sort: { Img: 'manual', Pl: 'recent', ...(so && so.sort) }, hist: (so && so.hist) || [], icons: { ...(so && so.icons) }, pvf: !!(so && so.pvf) };
+        SET = { ord: { Img: [], Pl: [], ...(so && so.ord) }, sort: { Img: 'manual', Pl: 'recent', ...(so && so.sort) }, hist: (so && so.hist) || [], icons: { ...(so && so.icons) }, pvf: !!(so && so.pvf), upd: (so && so.upd) || 0 };
     }
     catch {
         toast('データの読み込みに失敗しました');
@@ -3210,6 +3213,231 @@
     else
         toTab(); };
     $('pipb').onclick = () => toTab();
+    /* ===== データの受け渡し(zipの書き出し/読み込み) =====
+       zipの中身は、保存先フォルダの jigsaw_data と同じ形です(jigsaw_data/images/・saves/・index.json・settings.json)。
+       読み込むときは、同じパズルがあれば、更新日時が新しい方だけを上書きします(画像は、無いものだけ追加。消したものは消えません)。 */
+    const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++)
+            c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+        t[n] = c >>> 0;
+    } return t; })();
+    function crc32(u) { let c = ~0; for (let i = 0; i < u.length; i++)
+        c = CRC_T[(c ^ u[i]) & 255] ^ (c >>> 8); return ~c >>> 0; }
+    async function zipMake(files) {
+        /* 圧縮なし(画像はもともと圧縮済みのため)のzipを作ります */
+        const parts = [], cen = [], enc = new TextEncoder(), d = new Date(), tm = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), dt = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+        let off = 0;
+        for (const f of files) {
+            const b = f.data instanceof Blob ? f.data : new Blob([f.data]), u = new Uint8Array(await b.arrayBuffer()), n = enc.encode(f.name), crc = crc32(u), sz = u.length;
+            const h = new DataView(new ArrayBuffer(30));
+            h.setUint32(0, 0x04034b50, true);
+            h.setUint16(4, 20, true);
+            h.setUint16(6, 0x0800, true);
+            h.setUint16(10, tm, true);
+            h.setUint16(12, dt, true);
+            h.setUint32(14, crc, true);
+            h.setUint32(18, sz, true);
+            h.setUint32(22, sz, true);
+            h.setUint16(26, n.length, true);
+            parts.push(h.buffer, n, b);
+            const c = new DataView(new ArrayBuffer(46));
+            c.setUint32(0, 0x02014b50, true);
+            c.setUint16(4, 20, true);
+            c.setUint16(6, 20, true);
+            c.setUint16(8, 0x0800, true);
+            c.setUint16(12, tm, true);
+            c.setUint16(14, dt, true);
+            c.setUint32(16, crc, true);
+            c.setUint32(20, sz, true);
+            c.setUint32(24, sz, true);
+            c.setUint16(28, n.length, true);
+            c.setUint32(42, off, true);
+            cen.push(c.buffer, n);
+            off += 30 + n.length + sz;
+        }
+        let cs = 0;
+        cen.forEach(x => cs += x.byteLength);
+        const e = new DataView(new ArrayBuffer(22));
+        e.setUint32(0, 0x06054b50, true);
+        e.setUint16(8, files.length, true);
+        e.setUint16(10, files.length, true);
+        e.setUint32(12, cs, true);
+        e.setUint32(16, off, true);
+        return new Blob([...parts, ...cen, e.buffer], { type: 'application/zip' });
+    }
+    async function zipRead(blob) {
+        /* zipを読み込みます(圧縮なし・通常の圧縮(deflate)の両方に対応。PCで作ったzipも読めます) */
+        const buf = new Uint8Array(await blob.arrayBuffer()), dv = new DataView(buf.buffer), dec = new TextDecoder(), out = {};
+        let e = -1;
+        for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--)
+            if (dv.getUint32(i, true) == 0x06054b50) {
+                e = i;
+                break;
+            }
+        if (e < 0)
+            throw new Error('zipではありません');
+        const cnt = dv.getUint16(e + 10, true);
+        let p = dv.getUint32(e + 16, true);
+        for (let k = 0; k < cnt; k++) {
+            if (dv.getUint32(p, true) != 0x02014b50)
+                break;
+            const meth = dv.getUint16(p + 10, true), csz = dv.getUint32(p + 20, true), nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), lo = dv.getUint32(p + 42, true), name = dec.decode(buf.subarray(p + 46, p + 46 + nl)).replace(/\\/g, '/');
+            p += 46 + nl + xl + cl;
+            if (name.endsWith('/'))
+                continue;
+            const ds = lo + 30 + dv.getUint16(lo + 26, true) + dv.getUint16(lo + 28, true);
+            out[name.replace(/^(.*\/)?jigsaw_data\//, '')] = { meth, raw: buf.subarray(ds, ds + csz) };
+        }
+        return out;
+    }
+    async function zipGet(z, name) {
+        const e = z[name];
+        if (!e)
+            return null;
+        if (e.meth == 0)
+            return new Blob([e.raw]);
+        if (e.meth == 8)
+            return await new Response(new Blob([e.raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).blob();
+        throw new Error('対応していない圧縮形式です');
+    }
+    const EXT_T = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp', 'image/bmp': '.bmp', 'image/avif': '.avif', 'image/svg+xml': '.svg' };
+    const imgExt = b => ((b && b.name || '').match(/\.[^.]+$/) || [EXT_T[b && b.type] || '.img'])[0];
+    const extType = n => { const x = (n.match(/\.[^.]+$/) || [''])[0].toLowerCase(); for (const k in EXT_T)
+        if (EXT_T[k] == x || (x == '.jpeg' && k == 'image/jpeg'))
+            return k; return ''; };
+    const mbs = n => (n / 1048576).toFixed(1) + 'MB';
+    async function exportZip() {
+        if (G)
+            await saveNow();
+        toast('zipを作成中です…');
+        const files = [], idx = [];
+        for (const im of imgs) {
+            const file = im.id + imgExt(im.blob);
+            idx.push({ id: im.id, name: im.name, file });
+            files.push({ name: 'jigsaw_data/images/' + file, data: im.blob });
+        }
+        const sv = Object.values(saves).filter(k => imgs.some(i => i.id == k.img));
+        for (const o of sv)
+            files.push({ name: 'jigsaw_data/saves/' + o.id + '.json', data: new TextEncoder().encode(jf(o)) });
+        files.push({ name: 'jigsaw_data/index.json', data: new TextEncoder().encode(jf(idx)) });
+        files.push({ name: 'jigsaw_data/settings.json', data: new TextEncoder().encode(jf(SET)) });
+        let z;
+        try {
+            z = await zipMake(files);
+        }
+        catch {
+            return toast('zipを作成できませんでした');
+        }
+        const d = new Date(), p2 = n => String(n).padStart(2, '0'), fn = 'jigsaw_backup_' + d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) + '_' + p2(d.getHours()) + p2(d.getMinutes()) + '.zip';
+        const opts = [...(window.showSaveFilePicker ? [['保存先を選んで保存', 'pick']] : []), ['ダウンロード', 'dl']];
+        const v = await choose('<b class="fh">📦 zipを書き出す</b><p>zipを作成しました(画像 ' + imgs.length + ' 枚・パズル ' + sv.length + ' 個・' + mbs(z.size) + ')。</p><p class="em" style="font-size:12px">' + (window.showSaveFilePicker ? '「保存先を選んで保存」で、Googleドライブ' + (MOB ? '(保存先の一覧の「ドライブ」)' : '(パソコン版Googleドライブのフォルダ)') + 'など、好きな場所に保存できます。<br>' : '') + '「ダウンロード」は、ダウンロードのフォルダに保存します。</p>', opts, 'x');
+        if (v == 'pick') {
+            try {
+                const h = await showSaveFilePicker({ suggestedName: fn, types: [{ description: 'zip', accept: { 'application/zip': ['.zip'] } }] });
+                const w = await h.createWritable();
+                await w.write(z);
+                await w.close();
+                toast('zipを保存しました');
+            }
+            catch (e) {
+                toast(e && e.name == 'AbortError' ? 'キャンセルしました' : '保存できませんでした。「ダウンロード」を試してください');
+            }
+        }
+        else if (v == 'dl') {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(z);
+            a.download = fn;
+            document.body.append(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+            toast('ダウンロードしました');
+        }
+    }
+    async function importZip(f) {
+        let z;
+        try {
+            z = await zipRead(f);
+        }
+        catch {
+            return toast('zipを読み込めませんでした');
+        }
+        let idx = null, zs = null;
+        try {
+            idx = JSON.parse(await (await zipGet(z, 'index.json')).text());
+        }
+        catch { }
+        if (!Array.isArray(idx))
+            return toast('ジグソーパズルのデータ(jigsaw_data)が入っていないzipです');
+        try {
+            zs = JSON.parse(await (await zipGet(z, 'settings.json')).text());
+        }
+        catch { }
+        if (G) {
+            await saveNow();
+            G = null;
+        }
+        let ni = 0, ns = 0, us = 0, sk = 0;
+        for (const m of idx) {
+            if (!m || !m.id || imgs.some(i => i.id == m.id))
+                continue; /* 同じ画像がすでにあるときは、そのまま(追加しません) */
+            const b = await zipGet(z, 'images/' + m.file);
+            if (!b)
+                continue;
+            const file = new File([b], m.file, { type: extType(m.file) });
+            try {
+                await ST.putImg({ id: m.id, name: m.name, blob: file }, file);
+                ni++;
+            }
+            catch { }
+        }
+        const allImg = new Set([...imgs.map(i => i.id), ...idx.map(m => m && m.id)]);
+        for (const n of Object.keys(z)) {
+            if (!/^saves\/[^/]+\.json$/.test(n))
+                continue;
+            let o;
+            try {
+                o = JSON.parse(await (await zipGet(z, n)).text());
+            }
+            catch {
+                continue;
+            }
+            if (!o || !o.id || !allImg.has(o.img || o.id))
+                continue;
+            const cur = saves[o.id];
+            if (cur && (cur.upd || 0) >= (o.upd || 0)) {
+                sk++;
+                continue;
+            } /* こちらの方が新しい(または同じ)ときは、上書きしません */
+            try {
+                await ST.putSave(o);
+                cur ? us++ : ns++;
+            }
+            catch { }
+        }
+        let st = false;
+        if (zs && (zs.upd || 0) > (SET.upd || 0)) {
+            try {
+                await ST.putSet(zs);
+                st = true;
+            }
+            catch { }
+        }
+        await load();
+        toast('読み込みました: 画像 +' + ni + ' / パズル +' + ns + '・上書き ' + us + (sk ? '(こちらが新しいため、そのまま ' + sk + ')' : '') + (st ? ' / 設定を更新' : ''));
+    }
+    async function dataDlg() {
+        const v = await choose('<b class="fh">📦 データの受け渡し</b><p>画像とパズルの進行状況を、zipにまとめて書き出したり、読み込んだりします。<br>PC・スマホ・タブレットの間で、データを受け渡すときに使います。</p><p class="em" style="font-size:12px">読み込むときは、同じパズルがあれば、更新日時が新しい方だけを上書きします。<br>こちらにしかない画像やパズルは、消えずにそのまま残ります。</p>', [['書き出し(zipを作る)', 'ex'], ['読み込み(zipを選ぶ)', 'im']], 'x');
+        if (v == 'ex')
+            exportZip();
+        else if (v == 'im')
+            $('fz').click();
+    }
+    $('mD').onclick = async () => { if (RWIN !== window)
+        toTab(); await dataDlg(); };
+    $('fz').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (f)
+        await importZip(f); };
     /* ===== PWA(ホーム画面に追加して使う形) =====
        https で開いたとき(GitHub Pages など)だけ有効にします。PC(file:// や http://localhost)では何もしません。
        必要なファイル: manifest.json / sw.js / icon-192.png / icon-512.png / icon-maskable-512.png(jigsaw.html と同じ場所) */
