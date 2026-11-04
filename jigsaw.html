@@ -1238,8 +1238,9 @@
     }
     html.mob #gn {
       flex: 0 1 auto;
-      min-width: 3em;
+      min-width: 1.5em;
       max-width: 30%;
+      margin-right: 4px;
     }
     html.mob #st {
       white-space: nowrap;
@@ -1254,6 +1255,43 @@
     }
     html.mob .pm button {
       padding: 10px 14px;
+    }
+    /* スマホモード: パズルエリアをできるだけ広くする(左メニューの格納時の幅・パズルエリアの周りの余白を詰める) */
+    html.mob #mn.cl {
+      width: 34px;
+      padding: 6px 3px;
+    }
+    html.mob #mn.cl button {
+      padding: 10px 0;
+    }
+    html.mob .v.g {
+      padding-left: 3px;
+    }
+    html.mob #gl {
+      padding: 3px 3px 3px 0;
+      gap: 3px;
+    }
+    html.mob #sd {
+      margin-right: 13px;
+    }
+    html.mob #vGm::after {
+      width: 13px;
+    }
+    html.mob #sd.ca .tab {
+      width: 12px;
+    }
+    /* スマホモード: ツールバーのボタンの文字を「完成画像を前面に表示」と同じ12pxにして、横幅を詰める(高さは35pxのまま) */
+    html.mob #ob {
+      gap: 4px;
+    }
+    html.mob #ob button:not(#zc) {
+      height: 35px;
+      padding: 0 8px;
+      font-size: 12px;
+    }
+    html.mob #ob label {
+      font-size: 11px;
+      line-height: 1.2;
     }
     @media (orientation: portrait) {
       html.mob #sd:not(.ca) {
@@ -1336,7 +1374,7 @@
               <button id="zf">全体表示</button>
               <button id="zs" class="mo" title="範囲選択">⬚ 範囲選択</button>
               <button id="zp">完成画像</button>
-              <label id="pvf"><input type="checkbox" id="pvfc"> 完成画像を前面に表示</label>
+              <label id="pvf"><input type="checkbox" id="pvfc"> <span>完成画像を<br class="mo">前面に表示</span></label>
               <button id="zb">🎨 背景色・明るさ</button>
               <span id="st" class="em"></span>
               <button id="zc" title="パズルを保存して閉じる">☒</button>
@@ -1444,7 +1482,7 @@
     /* ===== スマホモード =====
        タッチ操作だけの端末(スマホ・タブレット)では、自動でスマホモードになります。
        左メニューの「表示モード」(スマホモード時)、またはURLの末尾の mode=mobile / mode=pc / mode=auto で手動切り替えできます(端末ごとに記憶)。 */
-    const APP_VER = '2026-11-05 c'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
+    const APP_VER = '2026-11-05 d'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
     const MODE_KEY = 'jigsaw_mode';
     let MODE_SET = 'auto';
     try {
