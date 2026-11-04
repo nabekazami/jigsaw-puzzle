@@ -1387,7 +1387,9 @@
         }
     }
     const TOUCH_DEV = (() => { try {
-        return matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
+        /* Android・iPhone・iPad、または指での操作が基本の端末をスマホモードにします(S Pen など、ペンが使える端末も含めます) */
+        const ua = navigator.userAgent || '', d = navigator.userAgentData;
+        return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || !!(d && (d.mobile || d.platform == 'Android')) || matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua));
     }
     catch {
         return false;
@@ -3259,9 +3261,9 @@
         $('mQ').querySelector('.lb').textContent = ' 保存して一覧へ';
         MT.mQ = '保存して一覧へ';
         mnTips();
-        for (const e of [$('mQ').nextElementSibling, $('mn').querySelector('.nt'), $('mF'), $('mF').nextElementSibling, $('sl')])
+        for (const e of [$('mQ').nextElementSibling, $('mn').querySelector('.nt')].concat(window.showDirectoryPicker ? [] : [$('mF'), $('mF').nextElementSibling, $('sl')]))
             if (e)
-                e.hidden = true; /* 終了時の注意書きと保存先フォルダは、スマホでは使えないので隠します */
+                e.hidden = true; /* 終了時の注意書きは隠します。保存先フォルダは、フォルダを選べるブラウザ(Android の Chrome など)では、PCと同じように使えます */
         $('vImg').querySelector('.hint').innerHTML = 'タイルを長押しして動かすと、並び順を入れ替えられます<br>長押しして離すと、名称変更・削除のボタンが出ます';
         $('vPl').querySelector('.hint').innerHTML = 'タイルを長押しして動かすと、並び順を入れ替えられます<br>長押しして離すと、名称変更・パズルコピー・削除のボタンが出ます';
         $('saB').querySelector('.sc').innerHTML = '<p class="op">・ピース/背景をドラッグ<span>ピース/背景を移動</span></p><p class="op">・ピースをタップ<span>ピースを右に90°回転</span></p><p class="op">・2本指でピンチ<span>パズル全体を拡大縮小</span></p><p class="op">・2本指でドラッグ<span>ピース上でも背景を移動</span></p><p class="op">・範囲選択ボタン→なぞる<span>範囲選択<br>背景タップで選択解除</span></p><hr><p class="op">・完成画像をドラッグ<span>完成画像を移動</span></p><p class="op">・完成画像の上でピンチ<span>完成画像を拡大縮小</span></p><p class="op">・完成画像を見失った場合<span>完成画像ボタンをタップで<br>デフォルトの位置に表示</span></p>';
