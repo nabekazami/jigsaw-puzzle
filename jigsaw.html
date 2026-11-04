@@ -1071,6 +1071,70 @@
       font-weight: 700;
       margin-top: 2px;
     }
+    /* 作業中の表示(zipの書き出し/読み込み・画像の追加・データの読み込み中) */
+    #busy {
+      position: absolute;
+      inset: 0;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000a;
+      touch-action: none;
+    }
+    #busy .bx {
+      width: min(340px, calc(100% - 40px));
+      padding: 22px 20px 16px;
+      border-radius: 14px;
+      background: var(--w);
+      color: var(--tx);
+      text-align: center;
+      box-shadow: 0 8px 30px #0008;
+    }
+    #busy .sp {
+      width: 38px;
+      height: 38px;
+      margin: 0 auto 12px;
+      border: 4px solid var(--ln);
+      border-top-color: var(--ac);
+      border-radius: 50%;
+      animation: bsp .9s linear infinite;
+    }
+    @keyframes bsp {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    #busy b {
+      display: block;
+      font-size: 15px;
+    }
+    #busy .bb {
+      height: 8px;
+      margin: 12px 0 6px;
+      border-radius: 4px;
+      background: var(--ln);
+      overflow: hidden;
+    }
+    #busy .bb i {
+      display: block;
+      width: 0;
+      height: 100%;
+      background: var(--ac);
+      transition: width .15s;
+    }
+    #busy small {
+      display: block;
+      min-height: 1.5em;
+      color: var(--sb);
+      font-size: 12px;
+    }
+    #busy p {
+      margin: 10px 0 0;
+      font-size: 12px;
+      font-weight: 700;
+      color: #e5484d;
+    }
     /* ===== スマホモード(html.mob) ===== */
     html:not(.mob) .mo {
       display: none!important;
@@ -1353,6 +1417,15 @@
       <div id="gatem"></div>
     </div>
     <div id="ts" hidden></div>
+    <div id="busy" hidden>
+      <div class="bx">
+        <div class="sp"></div>
+        <b id="busyt"></b>
+        <div class="bb"><i id="busyp"></i></div>
+        <small id="busys"></small>
+        <p>完了するまで、アプリを閉じないでください</p>
+      </div>
+    </div>
   </div>
   <button id="tbk" hidden>🧩 ジグソーパズル</button>
   <div id="pipn" hidden>
@@ -1792,7 +1865,10 @@
     $('mP').onclick = () => show('Pl');
     $('mA').onclick = () => $('fi').click();
     const imgDim = im => new Promise(r => { const i = new Image(); i.onload = () => { im.w = i.naturalWidth; im.h = i.naturalHeight; r(); }; i.onerror = () => r(); i.src = im.url; }); /* 画像の大きさ(横×縦)を調べる。一覧に出す前に済ませておく */
-    async function addFiles(fl) { let n = 0; for (const f of fl) {
+    async function addFiles(fl) { let n = 0; try {
+        for (const f of fl) {
+        busy('画像を追加しています…', n, fl.length, '画像 ' + (n + 1) + ' / ' + fl.length);
+        await tick();
         const o = { id: Date.now() + '-' + Math.random().toString(36).slice(2), name: f.name.replace(/\.[^.]+$/, ''), blob: f };
         try {
             await ST.putImg(o, f);
@@ -1804,6 +1880,9 @@
         await imgDim(o);
         imgs.push(o);
         n++;
+    } }
+    finally {
+        busy(false);
     } return n; }
     $('fi').onchange = async (e) => { await addFiles([...e.target.files]); e.target.value = ''; if ($('vGm').hidden)
         show($('vPl').hidden ? 'Img' : 'Pl');
@@ -2907,16 +2986,19 @@
             } },
             putSet(o) { const t = jf(o); return enq(() => wr(DH, 'settings.json', t)); } };
     }
-    async function load() { imgs = []; saves = {}; try {
+    async function load() { imgs = []; saves = {}; busy('データを読み込んでいます…', 0, 0, '画像の一覧'); await tick(); try {
         imgs = (await ST.imgs()).map(x => ({ ...x, url: URL.createObjectURL(x.blob) }));
-        await Promise.all(imgs.map(imgDim));
+        let li = 0;
+        busy('データを読み込んでいます…', 0, imgs.length, '画像 0 / ' + imgs.length);
+        await Promise.all(imgs.map(im => imgDim(im).then(() => { li++; busy('データを読み込んでいます…', li, imgs.length, '画像 ' + li + ' / ' + imgs.length); })));
+        busy('データを読み込んでいます…', 0, 0, 'パズルの進行状況');
         (await ST.saves()).forEach(s => { s.img = s.img || s.id; saves[s.id] = s; });
         const so = await ST.getSet();
         SET = { ord: { Img: [], Pl: [], ...(so && so.ord) }, sort: { Img: 'manual', Pl: 'recent', ...(so && so.sort) }, hist: (so && so.hist) || [], icons: { ...(so && so.icons) }, pvf: !!(so && so.pvf), upd: (so && so.upd) || 0 };
     }
     catch {
         toast('データの読み込みに失敗しました');
-    } applyIcons(); await setSl(); show('Img'); }
+    } busy(false); applyIcons(); await setSl(); show('Img'); }
     async function setSl() { let p = ''; try {
         p = await getK('path') || '';
     }
@@ -3213,6 +3295,51 @@
     else
         toTab(); };
     $('pipb').onclick = () => toTab();
+    /* ===== 作業中の表示 =====
+       busy(見出し, 済んだ数, 全体の数, 補足) で表示、busy(false) で閉じます。全体の数が0のときは、進み具合のバーを出しません。 */
+    let BZT = 0;
+    function busy(t, done, total, sub) {
+        const b = $('busy');
+        if (t === false) {
+            b.hidden = true;
+            return;
+        }
+        b.hidden = false;
+        $('busyt').textContent = t;
+        const has = total > 0;
+        $('busyp').parentNode.style.visibility = has ? 'visible' : 'hidden';
+        $('busyp').style.width = has ? Math.min(100, done / total * 100) + '%' : '0';
+        $('busys').textContent = sub != null ? sub : has ? done + ' / ' + total : '';
+    }
+    const tick = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0))); /* 表示を画面に反映させるため、少しだけ待ちます */
+    async function readProg(f, label) {
+        /* ファイルを少しずつ読み込みながら、読み込んだ量を表示します(Googleドライブのファイルは、ここでダウンロードされます) */
+        if (!f.stream)
+            return new Uint8Array(await f.arrayBuffer());
+        const tot = f.size || 0, ch = [];
+        let p = 0, t0 = 0;
+        const rd = f.stream().getReader();
+        busy(label, 0, tot, tot ? '0.0MB / ' + mbs(tot) : '');
+        for (;;) {
+            const { done, value } = await rd.read();
+            if (done)
+                break;
+            ch.push(value);
+            p += value.length;
+            const now = Date.now();
+            if (now - t0 > 120) {
+                t0 = now;
+                busy(label, p, tot, mbs(p) + (tot ? ' / ' + mbs(tot) : ''));
+            }
+        }
+        const out = new Uint8Array(p);
+        let q = 0;
+        for (const c of ch) {
+            out.set(c, q);
+            q += c.length;
+        }
+        return out;
+    }
     /* ===== データの受け渡し(zipの書き出し/読み込み) =====
        zipの中身は、保存先フォルダの jigsaw_data と同じ形です(jigsaw_data/images/・saves/・index.json・settings.json)。
        読み込むときは、同じパズルがあれば、更新日時が新しい方だけを上書きします(画像は、無いものだけ追加。消したものは消えません)。 */
@@ -3224,11 +3351,15 @@
     } return t; })();
     function crc32(u) { let c = ~0; for (let i = 0; i < u.length; i++)
         c = CRC_T[(c ^ u[i]) & 255] ^ (c >>> 8); return ~c >>> 0; }
-    async function zipMake(files) {
+    async function zipMake(files, prog) {
         /* 圧縮なし(画像はもともと圧縮済みのため)のzipを作ります */
         const parts = [], cen = [], enc = new TextEncoder(), d = new Date(), tm = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), dt = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
-        let off = 0;
+        let off = 0, fi = 0;
         for (const f of files) {
+            if (prog && (fi++ % 2 == 0 || f.data instanceof Blob)) {
+                prog(fi, files.length);
+                await tick();
+            }
             const b = f.data instanceof Blob ? f.data : new Blob([f.data]), u = new Uint8Array(await b.arrayBuffer()), n = enc.encode(f.name), crc = crc32(u), sz = u.length;
             const h = new DataView(new ArrayBuffer(30));
             h.setUint32(0, 0x04034b50, true);
@@ -3266,9 +3397,9 @@
         e.setUint32(16, off, true);
         return new Blob([...parts, ...cen, e.buffer], { type: 'application/zip' });
     }
-    async function zipRead(blob) {
+    async function zipRead(buf) {
         /* zipを読み込みます(圧縮なし・通常の圧縮(deflate)の両方に対応。PCで作ったzipも読めます) */
-        const buf = new Uint8Array(await blob.arrayBuffer()), dv = new DataView(buf.buffer), dec = new TextDecoder(), out = {};
+        const dv = new DataView(buf.buffer), dec = new TextDecoder(), out = {};
         let e = -1;
         for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--)
             if (dv.getUint32(i, true) == 0x06054b50) {
@@ -3310,7 +3441,8 @@
     async function exportZip() {
         if (G)
             await saveNow();
-        toast('zipを作成中です…');
+        busy('zipを作成しています…', 0, 0, '準備中');
+        await tick();
         const files = [], idx = [];
         for (const im of imgs) {
             const file = im.id + imgExt(im.blob);
@@ -3324,23 +3456,29 @@
         files.push({ name: 'jigsaw_data/settings.json', data: new TextEncoder().encode(jf(SET)) });
         let z;
         try {
-            z = await zipMake(files);
+            z = await zipMake(files, (i, n) => busy('zipを作成しています…', i, n, 'ファイル ' + i + ' / ' + n));
         }
         catch {
+            busy(false);
             return toast('zipを作成できませんでした');
         }
+        busy(false);
         const d = new Date(), p2 = n => String(n).padStart(2, '0'), fn = 'jigsaw_backup_' + d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) + '_' + p2(d.getHours()) + p2(d.getMinutes()) + '.zip';
         const opts = [...(window.showSaveFilePicker ? [['保存先を選んで保存', 'pick']] : []), ['ダウンロード', 'dl']];
         const v = await choose('<b class="fh">📦 zipを書き出す</b><p>zipを作成しました(画像 ' + imgs.length + ' 枚・パズル ' + sv.length + ' 個・' + mbs(z.size) + ')。</p><p class="em" style="font-size:12px">' + (window.showSaveFilePicker ? '「保存先を選んで保存」で、Googleドライブ' + (MOB ? '(保存先の一覧の「ドライブ」)' : '(パソコン版Googleドライブのフォルダ)') + 'など、好きな場所に保存できます。<br>' : '') + '「ダウンロード」は、ダウンロードのフォルダに保存します。</p>', opts, 'x');
         if (v == 'pick') {
             try {
                 const h = await showSaveFilePicker({ suggestedName: fn, types: [{ description: 'zip', accept: { 'application/zip': ['.zip'] } }] });
+                busy('zipを保存しています…', 0, 0, mbs(z.size) + '(Googleドライブなどは、このあと端末からアップロードされます)');
+                await tick();
                 const w = await h.createWritable();
                 await w.write(z);
                 await w.close();
+                busy(false);
                 toast('zipを保存しました');
             }
             catch (e) {
+                busy(false);
                 toast(e && e.name == 'AbortError' ? 'キャンセルしました' : '保存できませんでした。「ダウンロード」を試してください');
             }
         }
@@ -3356,13 +3494,23 @@
         }
     }
     async function importZip(f) {
+        try {
+            await importZip2(f);
+        }
+        finally {
+            busy(false);
+        }
+    }
+    async function importZip2(f) {
         let z;
         try {
-            z = await zipRead(f);
+            z = await zipRead(await readProg(f, 'zipを読み込んでいます…'));
         }
         catch {
             return toast('zipを読み込めませんでした');
         }
+        busy('zipの中身を確認しています…', 0, 0);
+        await tick();
         let idx = null, zs = null;
         try {
             idx = JSON.parse(await (await zipGet(z, 'index.json')).text());
@@ -3379,9 +3527,11 @@
             G = null;
         }
         let ni = 0, ns = 0, us = 0, sk = 0;
-        for (const m of idx) {
-            if (!m || !m.id || imgs.some(i => i.id == m.id))
-                continue; /* 同じ画像がすでにあるときは、そのまま(追加しません) */
+        const addI = idx.filter(m => m && m.id && !imgs.some(i => i.id == m.id));
+        let ii = 0;
+        for (const m of addI) {
+            busy('画像を追加しています…', ii, addI.length, '画像 ' + (++ii) + ' / ' + addI.length);
+            await tick();
             const b = await zipGet(z, 'images/' + m.file);
             if (!b)
                 continue;
@@ -3392,10 +3542,13 @@
             }
             catch { }
         }
-        const allImg = new Set([...imgs.map(i => i.id), ...idx.map(m => m && m.id)]);
-        for (const n of Object.keys(z)) {
-            if (!/^saves\/[^/]+\.json$/.test(n))
-                continue;
+        const allImg = new Set([...imgs.map(i => i.id), ...idx.map(m => m && m.id)]), sn = Object.keys(z).filter(n => /^saves\/[^/]+\.json$/.test(n));
+        let si = 0;
+        for (const n of sn) {
+            if (si++ % 5 == 0) {
+                busy('パズルの進行状況を確認しています…', si, sn.length, 'パズル ' + si + ' / ' + sn.length);
+                await tick();
+            }
             let o;
             try {
                 o = JSON.parse(await (await zipGet(z, n)).text());
@@ -3417,6 +3570,7 @@
             catch { }
         }
         let st = false;
+        busy('設定を確認しています…', 0, 0);
         if (zs && (zs.upd || 0) > (SET.upd || 0)) {
             try {
                 await ST.putSet(zs);
