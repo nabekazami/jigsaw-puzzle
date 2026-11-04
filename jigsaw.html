@@ -1280,6 +1280,21 @@
     html.mob #sd.ca .tab {
       width: 12px;
     }
+    html.mob #sd {
+      padding-bottom: 4px;
+    }
+    html.mob #sd hr {
+      margin: 6px 0;
+    }
+    html.mob .sa.c {
+      min-height: 40px;
+    }
+    html.mob #saB .op {
+      margin-bottom: 5px;
+    }
+    html.mob #sd.ca {
+      padding-top: 46px; /* 格納したときの上のタブの上端を、パズルエリアの上端(ツールバーの下)にそろえます */
+    }
     /* スマホモード: ツールバーのボタンの文字を「完成画像を前面に表示」と同じ12pxにして、横幅を詰める(高さは35pxのまま) */
     html.mob #ob {
       gap: 4px;
@@ -1482,7 +1497,7 @@
     /* ===== スマホモード =====
        タッチ操作だけの端末(スマホ・タブレット)では、自動でスマホモードになります。
        左メニューの「表示モード」(スマホモード時)、またはURLの末尾の mode=mobile / mode=pc / mode=auto で手動切り替えできます(端末ごとに記憶)。 */
-    const APP_VER = '2026-11-05 d'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
+    const APP_VER = '2026-11-05 e'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
     const MODE_KEY = 'jigsaw_mode';
     let MODE_SET = 'auto';
     try {
@@ -3674,7 +3689,12 @@
         $('mn').classList.add('cl'); /* 左メニュー・右パネルは、最初は格納しておきます */
         mnTips();
         sdMode('none');
-        $('tA').onclick = $('tB').onclick = () => sdMode(SDM == 'none' ? 'full' : 'none'); /* スマホモードは「全て格納」と「全て表示」の2つだけ */
+        /* スマホモードの右パネル: 上のタブ=上のエリア(エリアごとにピースを集める)だけを表示 / 下のタブ=下のエリア(操作説明)だけを表示。
+           表示中のエリアのタブをもう一度押すと、格納します */
+        const mobSd = m => { SDM = m; $('saA').classList.toggle('c', m != 'A'); $('saB').classList.toggle('c', m != 'B'); $('sd').classList.toggle('ca', m == 'none'); if (pvRatio() >= .8)
+            pvReset(); cwMask(); };
+        $('tA').onclick = () => mobSd(SDM == 'A' ? 'none' : 'A');
+        $('tB').onclick = () => mobSd(SDM == 'B' ? 'none' : 'B');
         $('mQ').querySelector('.lb').textContent = ' 保存して一覧へ';
         MT.mQ = '保存して一覧へ';
         mnTips();
