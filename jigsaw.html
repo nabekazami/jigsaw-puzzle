@@ -3649,17 +3649,6 @@
         $('vImg').querySelector('.hint').innerHTML = 'タイルを長押しして動かすと、並び順を入れ替えられます<br>長押しして離すと、名称変更・削除のボタンが出ます';
         $('vPl').querySelector('.hint').innerHTML = 'タイルを長押しして動かすと、並び順を入れ替えられます<br>長押しして離すと、名称変更・パズルコピー・削除のボタンが出ます';
         $('saB').querySelector('.sc').innerHTML = '<p class="op">・ピース/背景をドラッグ<span>ピース/背景を移動</span></p><p class="op">・ピースをタップ<span>ピースを右に90°回転</span></p><p class="op">・2本指でピンチ<span>パズル全体を拡大縮小</span></p><p class="op">・2本指でドラッグ<span>ピース上でも背景を移動</span></p><p class="op">・範囲選択ボタン→なぞる<span>範囲選択<br>背景タップで選択解除</span></p><hr><p class="op">・完成画像をドラッグ<span>完成画像を移動</span></p><p class="op">・完成画像の上でピンチ<span>完成画像を拡大縮小</span></p><p class="op">・完成画像を見失った場合<span>完成画像ボタンをタップで<br>デフォルトの位置に表示</span></p>';
-        /* 全画面表示(全画面API): 画面に触れたときに、動画の全画面再生と同じ表示に切り替えます。
-           (ブラウザの決まりで、画面に触れたときにしか切り替えられません。アプリを裏に回すなどで解除されたときは、次に触れたときに、また切り替えます。)
-           端からスワイプしたときの通知欄・戻るボタンの表示のしかた(半透明で重なるかどうか)は、Android と Chrome が決めます。
-           使わないときは、MOB_FS を false にします。 */
-        const MOB_FS = true;
-        const fsOn = () => { if (!MOB_FS || document.fullscreenElement || !document.documentElement.requestFullscreen)
-            return; try {
-            document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => 0);
-        }
-        catch { } };
-        document.addEventListener('pointerup', fsOn, true);
         document.addEventListener('visibilitychange', () => { if (document.visibilityState == 'hidden') {
             saveNow();
             if (ST)
