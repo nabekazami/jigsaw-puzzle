@@ -1333,8 +1333,6 @@
           <div id="gl">
             <div id="ob">
               <b id="gn"></b>
-              <button id="zi">＋</button>
-              <button id="zo">－</button>
               <button id="zf">全体表示</button>
               <button id="zs" class="mo" title="範囲選択">⬚ 範囲選択</button>
               <button id="zp">完成画像</button>
@@ -1446,7 +1444,7 @@
     /* ===== スマホモード =====
        タッチ操作だけの端末(スマホ・タブレット)では、自動でスマホモードになります。
        左メニューの「表示モード」(スマホモード時)、またはURLの末尾の mode=mobile / mode=pc / mode=auto で手動切り替えできます(端末ごとに記憶)。 */
-    const APP_VER = '2026-11-05 b'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
+    const APP_VER = '2026-11-05 c'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
     const MODE_KEY = 'jigsaw_mode';
     let MODE_SET = 'auto';
     try {
@@ -2747,8 +2745,6 @@
     addEventListener('keydown', escH);
     cv.addEventListener('mousedown', e => { if (e.button == 1)
         e.preventDefault(); });
-    $('zi').onclick = () => G && zoom(1.25, cw / 2, ch / 2);
-    $('zo').onclick = () => G && zoom(.8, cw / 2, ch / 2);
     $('zf').onclick = () => G && fitAll();
     $('zp').onclick = () => { const p = $('pv'); if (!p.hidden && pvRatio() >= .999) {
         pvReset();
@@ -2899,7 +2895,7 @@
             await ST.putSet(SET);
         }
         catch { }
-        show('Img');
+        show('Pl');
         return toast('保存しました');
     } if (!await choose('<b>ゲームを終了しますか?</b><p>現在の状態は保存されます。</p>', [['はい', 1], ['いいえ', 0]]))
         return; await saveNow(); try {
