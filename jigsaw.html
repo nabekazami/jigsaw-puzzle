@@ -1517,7 +1517,7 @@
     /* ===== スマホモード =====
        タッチ操作だけの端末(スマホ・タブレット)では、自動でスマホモードになります。
        左メニューの「表示モード」(スマホモード時)、またはURLの末尾の mode=mobile / mode=pc / mode=auto で手動切り替えできます(端末ごとに記憶)。 */
-    const APP_VER = '2026-11-06 b'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
+    const APP_VER = '2026-11-06 c'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
     const MODE_KEY = 'jigsaw_mode';
     let MODE_SET = 'auto';
     try {
@@ -3282,7 +3282,7 @@
         /* 前回のフォルダへのアクセス許可を、画面のクリック(ブラウザの仕様でクリックが必要)で求めます */
         return new Promise(res => {
             const g = $('gate');
-            $('gatem').textContent = '前回の保存先フォルダ「' + h.name + '」に接続します。画面をクリックしてください。';
+            $('gatem').textContent = '前回の保存先フォルダ「' + h.name + '」に接続します。画面を' + (MOB ? 'タップ' : 'クリック') + 'してください。'; /* スマホモードは「タップ」 */
             g.hidden = false;
             g.onpointerdown = async (e) => {
                 e.preventDefault();
