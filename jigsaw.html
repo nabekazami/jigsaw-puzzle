@@ -1283,11 +1283,28 @@
     html.mob #sd {
       padding-bottom: 4px;
     }
+    html.mob #sd:not(.ca) {
+      padding-top: 6px; /* 右パネルの上の余白を詰めます(上のタブは、パネルの上端近くに出ます) */
+    }
     html.mob #sd hr {
-      margin: 6px 0;
+      margin: 4px 0;
     }
     html.mob .sa.c {
-      min-height: 40px;
+      min-height: 34px;
+    }
+    html.mob #saA .sc>b {
+      display: block;
+      margin-top: 4px;
+    }
+    html.mob #rg {
+      margin-top: 4px!important;
+      margin-bottom: 4px!important;
+    }
+    html.mob .ar {
+      margin-bottom: 4px;
+    }
+    html.mob #saA .op {
+      margin-bottom: 0;
     }
     html.mob #saB .op {
       margin-bottom: 5px;
@@ -1497,7 +1514,7 @@
     /* ===== スマホモード =====
        タッチ操作だけの端末(スマホ・タブレット)では、自動でスマホモードになります。
        左メニューの「表示モード」(スマホモード時)、またはURLの末尾の mode=mobile / mode=pc / mode=auto で手動切り替えできます(端末ごとに記憶)。 */
-    const APP_VER = '2026-11-05 e'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
+    const APP_VER = '2026-11-05 f'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
     const MODE_KEY = 'jigsaw_mode';
     let MODE_SET = 'auto';
     try {
@@ -2206,7 +2223,10 @@
             rg.style.aspectRatio = wk.width + '/' + wk.height;
             rg.style.width = Math.min(pw, 220 * asp) + 'px';
             rg.style.margin = '8px auto';
+            rg.dataset.w0 = rg.style.width;
         }
+        if (MOB && window.mobFit)
+            setTimeout(mobFit, 0);
         ;
         for (let k = 0; k < 9; k++) {
             const b = document.createElement('button');
@@ -3692,7 +3712,34 @@
         /* スマホモードの右パネル: 上のタブ=上のエリア(エリアごとにピースを集める)だけを表示 / 下のタブ=下のエリア(操作説明)だけを表示。
            表示中のエリアのタブをもう一度押すと、格納します */
         const mobSd = m => { SDM = m; $('saA').classList.toggle('c', m != 'A'); $('saB').classList.toggle('c', m != 'B'); $('sd').classList.toggle('ca', m == 'none'); if (pvRatio() >= .8)
-            pvReset(); cwMask(); };
+            pvReset(); cwMask(); mobFit(); };
+        /* スマホモードの右パネルを、画面に収まるように調整します。
+           上のエリア表示中: 下のタブが見切れるときは、9分割の画像を小さくします(縦に長い画像のとき)。
+           下のエリア表示中: 操作説明が入りきらないときは、文字を少しずつ小さくします(最小 8.5px)。 */
+        window.mobFit = () => {
+            const sd = $('sd'), rg = $('rg');
+            if (rg.dataset.w0)
+                rg.style.width = rg.dataset.w0;
+            const ops = [...$('saB').querySelectorAll('.sc .op')];
+            ops.forEach(o => o.style.fontSize = '');
+            if (SDM == 'A' && rg.offsetHeight) {
+                const sb = sd.getBoundingClientRect().bottom - parseFloat(getComputedStyle(sd).paddingBottom), ov = $('tB').getBoundingClientRect().bottom - sb;
+                if (ov > 0) {
+                    const w = rg.offsetWidth, h = rg.offsetHeight, nh = Math.max(60, h - ov - 2);
+                    rg.style.width = nh * w / h + 'px';
+                }
+            }
+            if (SDM == 'B' && ops.length) {
+                const sc = $('saB').querySelector('.sc');
+                let f = parseFloat(getComputedStyle(ops[0]).fontSize);
+                while (sc.scrollHeight > sc.clientHeight && f > 8.5) {
+                    f -= .5;
+                    ops.forEach(o => o.style.fontSize = f + 'px');
+                }
+            }
+        };
+        let mft = 0;
+        addEventListener('resize', () => { clearTimeout(mft); mft = setTimeout(() => G && mobFit(), 200); });
         $('tA').onclick = () => mobSd(SDM == 'A' ? 'none' : 'A');
         $('tB').onclick = () => mobSd(SDM == 'B' ? 'none' : 'B');
         $('mQ').querySelector('.lb').textContent = ' 保存して一覧へ';
