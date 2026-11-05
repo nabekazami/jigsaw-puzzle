@@ -1517,7 +1517,7 @@
     /* ===== スマホモード =====
        タッチ操作だけの端末(スマホ・タブレット)では、自動でスマホモードになります。
        左メニューの「表示モード」(スマホモード時)、またはURLの末尾の mode=mobile / mode=pc / mode=auto で手動切り替えできます(端末ごとに記憶)。 */
-    const APP_VER = '2026-11-05 g'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
+    const APP_VER = '2026-11-05 h'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
     const MODE_KEY = 'jigsaw_mode';
     let MODE_SET = 'auto';
     try {
@@ -2029,6 +2029,50 @@
             x.lineTo(x1, y1);
     }
     function pth(x, c, r) { const { s, sy, hs, vs } = G; x.beginPath(); x.moveTo(0, 0); eg(x, 0, 0, s, 0, 0, -1, hs[r][c], 1, 0); eg(x, s, 0, s, sy, 1, 0, vs[r][c + 1], -1, 0); eg(x, s, sy, 0, sy, 0, 1, hs[r + 1][c], -1, 1); eg(x, 0, sy, 0, 0, -1, 0, vs[r][c], 1, 1); x.closePath(); }
+    /* スマホモード: ピースの絵を、数枚の大きな絵(アトラス)にまとめて作ります。
+       小さな絵を900個別々に描くより、まとめた絵から切り出して描く方が、画面(GPU)への転送が1回で済み、ずっと軽くなります。
+       ピースの絵の大きさは、1辺 MOB_SPR px までに抑えます(大きすぎる絵は小さくして作ります)。 */
+    const MOB_SPR = 160, AT_W = 2048;
+    function sprAt(i) {
+        const { s, sy, m, cols, wk } = G, c = i % cols, r = (i / cols) | 0, zw = s + 2 * m, zh = sy + 2 * m;
+        if (!G.at) {
+            const q = Math.min(1, MOB_SPR / Math.max(zw, zh)), cw2 = Math.ceil(zw * q), ch2 = Math.ceil(zh * q), pr = Math.max(1, (AT_W / cw2) | 0), rows = Math.max(1, Math.min((AT_W / ch2) | 0, Math.ceil(G.n / pr)));
+            G.at = { q, cw: cw2, ch: ch2, pr, rows, per: pr * rows, sh: [] };
+        }
+        const A = G.at, si = (i / A.per) | 0, k = i % A.per, ax = (k % A.pr) * A.cw, ay = ((k / A.pr) | 0) * A.ch;
+        if (!A.sh[si]) {
+            const cnt = Math.min(A.per, G.n - si * A.per), c2 = document.createElement('canvas');
+            c2.width = A.pr * A.cw;
+            c2.height = Math.ceil(cnt / A.pr) * A.ch;
+            A.sh[si] = c2;
+        }
+        const x = A.sh[si].getContext('2d');
+        x.save();
+        x.beginPath();
+        x.rect(ax, ay, A.cw, A.ch);
+        x.clip();
+        x.translate(ax, ay);
+        x.scale(A.q, A.q);
+        x.translate(m, m);
+        pth(x, c, r);
+        x.save();
+        x.clip();
+        x.drawImage(wk, c * s - m, r * sy - m, zw, zh, -m, -m, zw, zh);
+        x.restore();
+        pth(x, c, r);
+        x.strokeStyle = 'rgba(0,0,0,.4)';
+        x.lineWidth = 1;
+        x.stroke();
+        x.restore();
+        return G.sp[i] = [si, ax, ay];
+    }
+    /* ピースの絵を描きます(スマホモードはアトラスから切り出し、PCモードは従来どおり) */
+    function dSp(x, i, X, Y) {
+        if (!MOB)
+            return x.drawImage(G.sp[i] || spr(i), X, Y);
+        const p = G.sp[i] || sprAt(i), A = G.at;
+        x.drawImage(A.sh[p[0]], p[1], p[2], A.cw, A.ch, X, Y, G.s + 2 * G.m, G.sy + 2 * G.m);
+    }
     function spr(i) { const { s, sy, m, cols, wk } = G, c = i % cols, r = (i / cols) | 0, k = document.createElement('canvas'), zw = s + 2 * m, zh = sy + 2 * m; k.width = zw; k.height = zh; const x = k.getContext('2d'); x.translate(m, m); pth(x, c, r); x.save(); x.clip(); x.drawImage(wk, c * s - m, r * sy - m, zw, zh, -m, -m, zw, zh); x.restore(); pth(x, c, r); x.strokeStyle = 'rgba(0,0,0,.4)'; x.lineWidth = 1; x.stroke(); return G.sp[i] = k; }
     /* 駒の位置: 駒の中心 = グループの基準点 g + R^k(駒の元の位置)。k=グループの向き(90°ずつ右回り)。グループ内の駒は、すべて同じ向きです */
     const rot90 = (x, y, k) => { for (let q = 0; q < (k & 3); q++) {
@@ -2057,29 +2101,41 @@
         x.clearRect(0, 0, cv.width, cv.height);
         /* スマホモードの軽量化: ピースのドラッグ中は、動かしていないピースを1回だけ別の画面(キャッシュ)に描いておき、毎回はそれを貼り付けて、動かしているピースだけ描き直します */
         if (MOB && drag && drag.d >= TAP()) {
-            const ds = new Set(drag.ids), key = [v.x, v.y, v.k, cv.width, cv.height, drag.cid, G.sel.size].join();
-            if (!LC || LC.key !== key) {
-                const c = LC && LC.c.width == cv.width && LC.c.height == cv.height ? LC.c : document.createElement('canvas');
-                c.width = cv.width;
-                c.height = cv.height;
-                const cx = c.getContext('2d');
-                cx.setTransform(dpr * v.k, 0, 0, dpr * v.k, dpr * v.x, dpr * v.y);
-                cx.imageSmoothingQuality = 'low';
-                drawIds(cx, id => !ds.has(id));
-                LC = { c, key };
-            }
+            const ds = new Set(drag.ids);
+            mkLC();
             x.drawImage(LC.c, 0, 0);
             x.setTransform(dpr * v.k, 0, 0, dpr * v.k, dpr * v.x, dpr * v.y);
             x.imageSmoothingQuality = 'low';
             drawIds(x, id => ds.has(id));
             return;
         }
-        LC = null;
+        if (LC)
+            LC.key = null; /* キャッシュの入れ物(キャンバス)は、次のドラッグで使い回します */
         x.setTransform(dpr * v.k, 0, 0, dpr * v.k, dpr * v.x, dpr * v.y);
         x.imageSmoothingQuality = panning || MOB ? 'low' : 'high';
         drawIds(x);
     }
     let LC = null; /* ドラッグ中の、動かしていないピースのキャッシュ(スマホモードのみ) */
+    function mkLC() {
+        /* 動かしていないピースを、1枚の絵(キャッシュ)に描いておきます。配置・拡大率・動かすピースが変わらなければ、作り直しません */
+        if (!G || !drag)
+            return;
+        const v = G.v, ds = new Set(drag.ids), key = [v.x, v.y, v.k, cv.width, cv.height, drag.cid, G.sel.size].join();
+        if (LC && LC.key === key)
+            return;
+        const c = LC && LC.c.width == cv.width && LC.c.height == cv.height ? LC.c : document.createElement('canvas');
+        if (c.width != cv.width || c.height != cv.height) {
+            c.width = cv.width;
+            c.height = cv.height;
+        }
+        const cx = c.getContext('2d');
+        cx.setTransform(1, 0, 0, 1, 0, 0);
+        cx.clearRect(0, 0, c.width, c.height);
+        cx.setTransform(dpr * v.k, 0, 0, dpr * v.k, dpr * v.x, dpr * v.y);
+        cx.imageSmoothingQuality = 'low';
+        drawIds(cx, id => !ds.has(id));
+        LC = { c, key };
+    }
     function drawIds(x, f) {
         const v = G.v, { s, sy, m, cols } = G;
         const X0 = -v.x / v.k - s - m, Y0 = -v.y / v.k - sy - m, X1 = X0 + cw / v.k + 2 * s + 2 * m, Y1 = Y0 + ch / v.k + 2 * sy + 2 * m;
@@ -2093,14 +2149,14 @@
                     continue;
                 const o = G.rot[i] & 3;
                 if (!o && !sl) {
-                    x.drawImage(G.sp[i] || spr(i), cx - s / 2 - m, cy - sy / 2 - m);
+                    dSp(x, i, cx - s / 2 - m, cy - sy / 2 - m);
                     continue;
                 }
                 x.save();
                 x.translate(cx, cy);
                 if (o)
                     x.rotate(o * Math.PI / 2);
-                x.drawImage(G.sp[i] || spr(i), -s / 2 - m, -sy / 2 - m);
+                dSp(x, i, -s / 2 - m, -sy / 2 - m);
                 if (sl) {
                     x.translate(-s / 2, -sy / 2);
                     pth(x, i % cols, (i / cols) | 0);
@@ -2250,6 +2306,22 @@
         show('Gm');
         applyBg();
         rHist();
+        if (MOB) {
+            /* スマホモード: パズルを開くときに、全ピースの絵を前もって作っておきます(遊んでいる途中で作ると、引っかかるため) */
+            const lb = sv ? 'パズルを開いています…' : 'パズルを作成しています…';
+            busy(lb, 0, n, 'ピースの絵を作成中 0 / ' + n);
+            await tick();
+            let t0 = performance.now();
+            for (let i = 0; i < n; i++) {
+                sprAt(i);
+                if (performance.now() - t0 > 60) {
+                    busy(lb, i + 1, n, 'ピースの絵を作成中 ' + (i + 1) + ' / ' + n);
+                    await tick();
+                    t0 = performance.now();
+                }
+            }
+            busy(false);
+        }
         rs();
         if (!sv)
             fitAll();
@@ -2558,6 +2630,8 @@
                 G.sel.clear();
             ids.forEach(d => bump(d));
             drag = { ids, cid: id, ci: pi, lx: e.clientX, ly: e.clientY, d: 0, px: 0, py: 0 };
+            if (MOB)
+                setTimeout(mkLC, 0); /* スマホモード: 指がピースに触れた時点で、動かしていないピースの絵を先に作り始めます */
         }
         else {
             G.sel.clear();
