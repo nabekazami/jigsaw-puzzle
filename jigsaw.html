@@ -1309,6 +1309,9 @@
     html.mob #saB .op {
       margin-bottom: 5px;
     }
+    html.mob #sd.ca .sa.c {
+      min-height: 40px; /* 格納したときは、上下のタブの間隔を、これまでどおりにします */
+    }
     html.mob #sd.ca {
       padding-top: 46px; /* 格納したときの上のタブの上端を、パズルエリアの上端(ツールバーの下)にそろえます */
     }
@@ -1514,7 +1517,7 @@
     /* ===== スマホモード =====
        タッチ操作だけの端末(スマホ・タブレット)では、自動でスマホモードになります。
        左メニューの「表示モード」(スマホモード時)、またはURLの末尾の mode=mobile / mode=pc / mode=auto で手動切り替えできます(端末ごとに記憶)。 */
-    const APP_VER = '2026-11-05 f'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
+    const APP_VER = '2026-11-05 g'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
     const MODE_KEY = 'jigsaw_mode';
     let MODE_SET = 'auto';
     try {
