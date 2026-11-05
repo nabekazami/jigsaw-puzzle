@@ -1517,7 +1517,7 @@
     /* ===== スマホモード =====
        タッチ操作だけの端末(スマホ・タブレット)では、自動でスマホモードになります。
        左メニューの「表示モード」(スマホモード時)、またはURLの末尾の mode=mobile / mode=pc / mode=auto で手動切り替えできます(端末ごとに記憶)。 */
-    const APP_VER = '2026-11-06 i'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
+    const APP_VER = '2026-11-06 b'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
     const MODE_KEY = 'jigsaw_mode';
     let MODE_SET = 'auto';
     try {
@@ -2093,19 +2093,24 @@
         cv.style.transform = '';
         if (!G)
             return;
+        if (PREP) {
+            cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
+            return;
+        }
         rv.x = G.v.x;
         rv.y = G.v.y;
         rv.k = G.v.k;
         const x = cv.getContext('2d'), v = G.v;
         x.setTransform(1, 0, 0, 1, 0, 0);
         x.clearRect(0, 0, cv.width, cv.height);
-        /* スマホモードの軽量化: ピースのドラッグ中は、動かしていないピースを1回だけ別の画面(キャッシュ)に描いておき、毎回はそれを貼り付けて、動かしているピースだけ描き直します */
-        if (MOB && drag) {
+        /* ドラッグの軽量化(PC・スマホ共通): ピースのドラッグ中は、動かしていないピースを1回だけ別の画面(キャッシュ)に描いておき、毎回はそれを貼り付けて、動かしているピースだけ描き直します。
+           キャッシュは画面と同じ細かさ・同じ描き方で作るので、見た目は変わりません */
+        if (drag) {
             const ds = new Set(drag.ids);
             mkLC();
             x.drawImage(LC.c, 0, 0);
             x.setTransform(dpr * v.k, 0, 0, dpr * v.k, dpr * v.x, dpr * v.y);
-            x.imageSmoothingQuality = 'low';
+            x.imageSmoothingQuality = MOB ? 'low' : 'high';
             drawIds(x, id => ds.has(id));
             return;
         }
@@ -2115,7 +2120,7 @@
         x.imageSmoothingQuality = panning || MOB ? 'low' : 'high';
         drawIds(x);
     }
-    let LC = null; /* ドラッグ中の、動かしていないピースのキャッシュ(スマホモードのみ) */
+    let LC = null; /* ドラッグ中の、動かしていないピースのキャッシュ */
     function mkLC() {
         /* 動かしていないピースを、1枚の絵(キャッシュ)に描いておきます。配置・拡大率・動かすピースが変わらなければ、作り直しません */
         if (!G || !drag)
@@ -2149,13 +2154,14 @@
             cx.rect(rx, ry, rw, rh);
             cx.clip();
             cx.setTransform(dpr * v.k, 0, 0, dpr * v.k, dpr * v.x, dpr * v.y);
-            cx.imageSmoothingQuality = 'low';
-            drawIds(cx, id => !ds.has(id), [a, b, e, f]);
+            cx.imageSmoothingQuality = MOB ? 'low' : 'high';
+            const pd = 4 / (dpr * v.k); /* 描き直す範囲の端(数ピクセル分の余白)にかかるピースも漏れなく描きます */
+            drawIds(cx, id => !ds.has(id), [a - pd, b - pd, e + pd, f + pd]);
             cx.restore();
         }
         else {
             cx.setTransform(dpr * v.k, 0, 0, dpr * v.k, dpr * v.x, dpr * v.y);
-            cx.imageSmoothingQuality = 'low';
+            cx.imageSmoothingQuality = MOB ? 'low' : 'high';
             drawIds(cx, id => !ds.has(id));
         }
         drag.fast = false;
@@ -2201,13 +2207,22 @@
     function hookRO() { if (RO)
         RO.disconnect(); RO = new RWIN.ResizeObserver(rs); RO.observe($('cw')); }
     hookRO();
+    let PREP = false; /* スマホモード: パズルを開く準備中は、ゲーム画面を描きません(準備の邪魔をしないため) */
     async function startGame(id, sv, n, rnd) {
         const im = imgs.find(i => i.id == id);
+        if (MOB) {
+            /* スマホモード: タップした直後から作業中の表示を出します */
+            PREP = true;
+            busy(sv ? 'パズルを開いています…' : 'パズルを作成しています…', 0, 0, '画像を準備中');
+            await tick();
+        }
         let el;
         try {
             el = await new Promise((ok, ng) => { const e = new Image(); e.onload = () => ok(e); e.onerror = ng; e.src = im.url; });
         }
         catch {
+            PREP = false;
+            busy(false);
             return toast('画像を読み込めません');
         }
         let cols, rows;
@@ -2349,6 +2364,7 @@
                     t0 = performance.now();
                 }
             }
+            PREP = false;
             busy(false);
         }
         rs();
@@ -2661,8 +2677,7 @@
             }
             ids.forEach(d => bump(d));
             drag = { ids, cid: id, ci: pi, lx: e.clientX, ly: e.clientY, d: 0, px: 0, py: 0, fast };
-            if (MOB)
-                mkLC(); /* スマホモード: 指がピースに触れた時点で、動かしていないピースの絵を作ります(今の画面を写して、触れたピースの場所だけ描き直すので軽い) */
+            mkLC(); /* 指(マウス)がピースに触れた時点で、動かしていないピースの絵を作ります(今の画面を写して、触れたピースの場所だけ描き直すので軽い) */
         }
         else {
             G.sel.clear();
