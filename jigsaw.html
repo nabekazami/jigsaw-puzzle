@@ -1517,7 +1517,7 @@
     /* ===== スマホモード =====
        タッチ操作だけの端末(スマホ・タブレット)では、自動でスマホモードになります。
        左メニューの「表示モード」(スマホモード時)、またはURLの末尾の mode=mobile / mode=pc / mode=auto で手動切り替えできます(端末ごとに記憶)。 */
-    const APP_VER = '2026-11-05 h'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
+    const APP_VER = '2026-11-06 i'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
     const MODE_KEY = 'jigsaw_mode';
     let MODE_SET = 'auto';
     try {
@@ -2100,7 +2100,7 @@
         x.setTransform(1, 0, 0, 1, 0, 0);
         x.clearRect(0, 0, cv.width, cv.height);
         /* スマホモードの軽量化: ピースのドラッグ中は、動かしていないピースを1回だけ別の画面(キャッシュ)に描いておき、毎回はそれを貼り付けて、動かしているピースだけ描き直します */
-        if (MOB && drag && drag.d >= TAP()) {
+        if (MOB && drag) {
             const ds = new Set(drag.ids);
             mkLC();
             x.drawImage(LC.c, 0, 0);
@@ -2131,14 +2131,43 @@
         const cx = c.getContext('2d');
         cx.setTransform(1, 0, 0, 1, 0, 0);
         cx.clearRect(0, 0, c.width, c.height);
-        cx.setTransform(dpr * v.k, 0, 0, dpr * v.k, dpr * v.x, dpr * v.y);
-        cx.imageSmoothingQuality = 'low';
-        drawIds(cx, id => !ds.has(id));
+        /* 速い作り方: 今の画面がそのまま使えるときは、画面を写して、動かすピースのあった場所だけを描き直します */
+        if (drag.fast && !q && !cv.style.transform && rv.x == v.x && rv.y == v.y && rv.k == v.k) {
+            const { s, sy, m } = G, h = Math.max(s, sy) / 2 + m;
+            let a = 1e9, b = 1e9, e = -1e9, f = -1e9;
+            for (const id of drag.ids)
+                for (const i of G.mem[id]) {
+                    const [px, py] = ctr(i);
+                    a = Math.min(a, px - h); b = Math.min(b, py - h); e = Math.max(e, px + h); f = Math.max(f, py + h);
+                }
+            cx.drawImage(cv, 0, 0);
+            const rx = Math.floor(dpr * (v.k * a + v.x)) - 2, ry = Math.floor(dpr * (v.k * b + v.y)) - 2,
+                rw = Math.ceil(dpr * v.k * (e - a)) + 4, rh = Math.ceil(dpr * v.k * (f - b)) + 4;
+            cx.clearRect(rx, ry, rw, rh);
+            cx.save();
+            cx.beginPath();
+            cx.rect(rx, ry, rw, rh);
+            cx.clip();
+            cx.setTransform(dpr * v.k, 0, 0, dpr * v.k, dpr * v.x, dpr * v.y);
+            cx.imageSmoothingQuality = 'low';
+            drawIds(cx, id => !ds.has(id), [a, b, e, f]);
+            cx.restore();
+        }
+        else {
+            cx.setTransform(dpr * v.k, 0, 0, dpr * v.k, dpr * v.x, dpr * v.y);
+            cx.imageSmoothingQuality = 'low';
+            drawIds(cx, id => !ds.has(id));
+        }
+        drag.fast = false;
         LC = { c, key };
     }
-    function drawIds(x, f) {
+    function drawIds(x, f, bd) {
         const v = G.v, { s, sy, m, cols } = G;
-        const X0 = -v.x / v.k - s - m, Y0 = -v.y / v.k - sy - m, X1 = X0 + cw / v.k + 2 * s + 2 * m, Y1 = Y0 + ch / v.k + 2 * sy + 2 * m;
+        let X0 = -v.x / v.k - s - m, Y0 = -v.y / v.k - sy - m, X1 = X0 + cw / v.k + 2 * s + 2 * m, Y1 = Y0 + ch / v.k + 2 * sy + 2 * m;
+        if (bd) { /* 指定した範囲(と重なるピース)だけを描きます */
+            const h = Math.max(s, sy) / 2 + m;
+            X0 = Math.max(X0, bd[0] - h); Y0 = Math.max(Y0, bd[1] - h); X1 = Math.min(X1, bd[2] + h); Y1 = Math.min(Y1, bd[3] + h);
+        }
         for (const id of G.z) {
             if (f && !f(id))
                 continue;
@@ -2623,15 +2652,17 @@
         }
         const pi = hitPiece(x, y), id = pi < 0 ? null : G.gid[pi];
         if (id != null) {
-            let ids = [id];
+            let ids = [id], fast = true;
             if (G.sel.has(id))
                 ids = [...G.sel];
-            else
+            else {
+                fast = !G.sel.size; /* 選択の色が消えるときは、今の画面を使い回せません */
                 G.sel.clear();
+            }
             ids.forEach(d => bump(d));
-            drag = { ids, cid: id, ci: pi, lx: e.clientX, ly: e.clientY, d: 0, px: 0, py: 0 };
+            drag = { ids, cid: id, ci: pi, lx: e.clientX, ly: e.clientY, d: 0, px: 0, py: 0, fast };
             if (MOB)
-                setTimeout(mkLC, 0); /* スマホモード: 指がピースに触れた時点で、動かしていないピースの絵を先に作り始めます */
+                mkLC(); /* スマホモード: 指がピースに触れた時点で、動かしていないピースの絵を作ります(今の画面を写して、触れたピースの場所だけ描き直すので軽い) */
         }
         else {
             G.sel.clear();
