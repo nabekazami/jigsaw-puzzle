@@ -1517,7 +1517,7 @@
     /* ===== スマホモード =====
        タッチ操作だけの端末(スマホ・タブレット)では、自動でスマホモードになります。
        左メニューの「表示モード」(スマホモード時)、またはURLの末尾の mode=mobile / mode=pc / mode=auto で手動切り替えできます(端末ごとに記憶)。 */
-    const APP_VER = '2026-11-06 c'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
+    const APP_VER = '2026-11-06 f'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
     const MODE_KEY = 'jigsaw_mode';
     let MODE_SET = 'auto';
     try {
@@ -1542,6 +1542,8 @@
     catch {
         return false;
     } })();
+    /* Androidアプリ(WebView)の中で開かれたときは、アプリ側が window.JigsawApp を用意します。PC版・PWA版では false です */
+    const ANDROID_APP = !!window.JigsawApp;
     const MOB = MODE_SET == 'mob' || (MODE_SET == 'auto' && TOUCH_DEV);
     const PHONE = Math.min(screen.width, screen.height) < 600; /* 画面の短い辺が600px未満ならスマホ、それ以上はタブレット */
     const MOB_PMAX = PHONE ? 1000 : 1000; /* スマホモードのピース数の上限(スマホ / タブレット) */
@@ -3128,7 +3130,7 @@
         }
         return JSON.stringify(o);
     }
-    const idbStore = { kind: 'idb', label: 'ブラウザ内(フォルダ未設定)', imgs: () => all('images'), saves: () => all('saves'), putImg: o => put('images', o), delImg: id => rm('images', id).then(() => rm('saves', id)), putSave: o => put('saves', o), delSave: id => rm('saves', id), getSet: () => getK('set'), putSet: o => putK('set', o), renImg: (id, n) => tx('images', 'readwrite', o => { const r = o.get(id); r.onsuccess = () => { if (r.result) {
+    const idbStore = { kind: 'idb', label: ANDROID_APP ? 'アプリ内' : 'ブラウザ内(フォルダ未設定)', imgs: () => all('images'), saves: () => all('saves'), putImg: o => put('images', o), delImg: id => rm('images', id).then(() => rm('saves', id)), putSave: o => put('saves', o), delSave: id => rm('saves', id), getSet: () => getK('set'), putSet: o => putK('set', o), renImg: (id, n) => tx('images', 'readwrite', o => { const r = o.get(id); r.onsuccess = () => { if (r.result) {
             r.result.name = n;
             o.put(r.result);
         } }; return r; }) };
@@ -3179,6 +3181,96 @@
             } },
             putSet(o) { const t = jf(o); return enq(() => wr(DH, 'settings.json', t)); } };
     }
+    /* ===== Androidアプリ版: 端末内のフォルダ(JigsawPuzzle など)を使う =====
+       読み書きはアプリ側(Kotlin)が行います。画像の読み込みは /folder/images/… から直接読みます。中の形は PC版の fsStore と同じです */
+    function appFolderInfo() { try { return JSON.parse(window.JigsawApp.folderInfo()); } catch { return { had: false, ok: false }; } }
+    let APP_FOLD = null;
+    window.__jigsawFolder = info => { const f = APP_FOLD; APP_FOLD = null; if (f) f(info); }; /* フォルダ選択画面の結果(アプリ側から呼ばれます) */
+    const appPickFolder = () => new Promise(res => { APP_FOLD = res; try { window.JigsawApp.folderPick(); } catch { APP_FOLD = null; res(null); } });
+    async function appStore(info) {
+        const J = window.JigsawApp, CH = 1048576;
+        if (!J.fInit())
+            throw new Error('folder');
+        let idx = [];
+        try {
+            const t = J.fRead('index.json');
+            if (t)
+                idx = JSON.parse(t);
+        }
+        catch { }
+        const wrT = (n, t) => { if (!J.fWrite(n, t)) throw new Error('write'); };
+        const wrB = async (n, b) => {
+            if (!J.fBinStart(n))
+                throw new Error('write');
+            for (let p = 0; p < b.size; p += CH)
+                if (!J.fBinChunk(await b64(b.slice(p, p + CH)))) {
+                    J.fBinEnd();
+                    throw new Error('write');
+                }
+            if (!J.fBinEnd())
+                throw new Error('write');
+        };
+        let Q = Promise.resolve();
+        const enq = fn => Q = Q.then(fn).catch(() => toast('保存に失敗しました'));
+        return { kind: 'app', label: (info.label || info.name || 'フォルダ') + ' / jigsaw_data', n: () => idx.length,
+            async imgs() { const o = []; for (const m of idx) {
+                try {
+                    const r = await fetch('/folder/images/' + encodeURIComponent(m.file), { cache: 'no-store' });
+                    if (!r.ok)
+                        continue;
+                    const b = await r.blob();
+                    o.push({ id: m.id, name: m.name, blob: new File([b], m.file, { type: extType(m.file) || b.type }) });
+                }
+                catch { }
+            } return o; },
+            async saves() { const o = []; let l = []; try {
+                l = JSON.parse(J.fList('saves'));
+            }
+            catch { } for (const n of l)
+                if (n.endsWith('.json'))
+                    try {
+                        o.push(JSON.parse(J.fRead('saves/' + n)));
+                    }
+                    catch { } return o; },
+            putImg(o, f) { const file = o.id + ((f.name || '').match(/\.[^.]+$/) || [imgExt(f)])[0]; idx.push({ id: o.id, name: o.name, file }); return enq(async () => { await wrB('images/' + file, f); wrT('index.json', jf(idx)); }); },
+            delImg(id) { const m = idx.find(x => x.id == id); idx = idx.filter(x => x.id != id); return enq(async () => { wrT('index.json', jf(idx)); if (m)
+                J.fDelete('images/' + m.file); J.fDelete('saves/' + id + '.json'); }); },
+            renImg(id, n) { const m = idx.find(x => x.id == id); if (m)
+                m.name = n; return enq(async () => wrT('index.json', jf(idx))); },
+            putSave(o) { const t = jf(o); return enq(async () => wrT('saves/' + o.id + '.json', t)); },
+            delSave(id) { return enq(async () => { J.fDelete('saves/' + id + '.json'); }); },
+            async getSet() { try {
+                const t = J.fRead('settings.json');
+                return t ? JSON.parse(t) : null;
+            }
+            catch {
+                return null;
+            } },
+            putSet(o) { const t = jf(o); return enq(async () => wrT('settings.json', t)); } };
+    }
+    async function appUseFolder(info) {
+        const fs = await appStore(info);
+        await putK('store', 'fs').catch(() => 0);
+        const old = await idbStore.imgs().catch(() => []);
+        if (old.length && !fs.n() && await choose('アプリ内の画像(' + old.length + '枚)と進行状況をこのフォルダへ移しますか?', [['はい', 1], ['いいえ', 0]])) {
+            busy('フォルダへ移しています…', 0, old.length);
+            try {
+                let k = 0;
+                for (const o of old) {
+                    busy('フォルダへ移しています…', k, old.length, '画像 ' + (++k) + ' / ' + old.length);
+                    await tick();
+                    await fs.putImg(o, o.blob);
+                }
+                for (const sv of await idbStore.saves())
+                    await fs.putSave(sv);
+            }
+            finally {
+                busy(false);
+            }
+        }
+        return fs;
+    }
+    const appPrev = () => { const i = appFolderInfo(); return i.had ? i : null; };
     async function load() { imgs = []; saves = {}; busy('データを読み込んでいます…', 0, 0, '画像の一覧'); await tick(); try {
         imgs = (await ST.imgs()).map(x => ({ ...x, url: URL.createObjectURL(x.blob) }));
         let li = 0;
@@ -3200,8 +3292,8 @@
        ・起動時: 前回の保存先があれば自動で接続し、設定画面は出しません(初回、または保存先の設定がないときだけ connect() の画面を出します)。
        ・左メニューの「保存先フォルダ」: connectMenu() の画面(右上に閉じるボタン付き)で、あとから変更できます。 */
     const folderIcon = () => { const e = $('mF').querySelector('.ic'); return e ? e.innerHTML : '📁'; }; /* 左メニューの「保存先フォルダ」と同じアイコン */
-    const folderHtml = () => '<b class="fh"><span class="fi"></span>保存先フォルダの設定</b><p>画像と進行状況は、選んだフォルダ内の「jigsaw_data」に保存されます。<b>このHTMLファイルが入っているフォルダ</b>(または任意のフォルダ)を選んでください。フォルダごとコピー・移動すれば、別の端末でも続きから遊べます。</p><p class="em nm"></p>';
-    const folderOpts = h => [...(h ? [['前回のフォルダに接続', 1]] : []), ['フォルダを選択', 2], ['ブラウザ内に保存', 0]];
+    const folderHtml = () => '<b class="fh"><span class="fi"></span>保存先フォルダの設定</b><p>画像と進行状況は、選んだフォルダ内の「jigsaw_data」に保存されます。' + (ANDROID_APP ? '<b>JigsawPuzzle フォルダ</b>(PWA版で使っているフォルダなど)を選んでください。' : '<b>このHTMLファイルが入っているフォルダ</b>(または任意のフォルダ)を選んでください。') + 'フォルダごとコピー・移動すれば、別の端末でも続きから遊べます。</p><p class="em nm"></p>';
+    const folderOpts = h => [...(h ? [['前回のフォルダに接続', 1]] : []), ['フォルダを選択', 2], [ANDROID_APP ? 'アプリ内に保存' : 'ブラウザ内に保存', 0]];
     function folderFill(h, note) { $('mb').querySelector('.fi').innerHTML = folderIcon(); $('mb').querySelector('.nm').textContent = note || (h ? '前回の保存先: ' + h.name : ''); }
     async function useFolder(RH, fresh) {
         const fs = await fsStore(RH);
@@ -3220,6 +3312,30 @@
     }
     async function folderApply(v, h) {
         let fs = null;
+        if (ANDROID_APP && v) {
+            try {
+                let info = null;
+                if (v == 1) {
+                    info = appFolderInfo();
+                    if (!info.ok) {
+                        toast('前回のフォルダにアクセスできません。「フォルダを選択」で選び直してください');
+                        return false;
+                    }
+                }
+                if (v == 2) {
+                    info = await appPickFolder();
+                    if (!info)
+                        return toast('フォルダの選択がキャンセルされました'), false;
+                }
+                fs = await appUseFolder(info);
+            }
+            catch {
+                toast('フォルダにアクセスできません');
+            }
+            if (fs)
+                ST = fs;
+            return !!fs;
+        }
         try {
             let RH = null;
             if (v == 1 && await h.requestPermission({ mode: 'readwrite' }) == 'granted')
@@ -3247,7 +3363,7 @@
         /* 起動時用の設定画面(閉じるボタンなし。選択が済むまで表示します) */
         let h = null;
         try {
-            h = await getK('dir');
+            h = ANDROID_APP ? appPrev() : await getK('dir');
         }
         catch { }
         for (;;) {
@@ -3263,7 +3379,7 @@
         /* 左メニュー「保存先フォルダ」用の設定画面(右上の✕・Escで閉じ、何も変えません) */
         let h = null;
         try {
-            h = await getK('dir');
+            h = ANDROID_APP ? appPrev() : await getK('dir');
         }
         catch { }
         const p = choose(folderHtml(), folderOpts(h), 'x');
@@ -3315,6 +3431,17 @@
             ST = idbStore;
             return load();
         } /* 「ブラウザ内に保存」を選んでいる場合は、設定画面を出しません */
+        if (ANDROID_APP) {
+            /* Androidアプリ版: 前回選んだフォルダへの許可はAndroidが覚えているので、そのままつなぎます */
+            const i = appFolderInfo();
+            if (i.ok)
+                try {
+                    ST = await appStore(i);
+                    return load();
+                }
+                catch { }
+            return connect(i.had ? '前回の保存先に接続できませんでした(フォルダが見つからないか、許可がありません): ' + (i.name || '') : undefined);
+        }
         if (!window.showDirectoryPicker) {
             ST = idbStore;
             if (!MOB)
@@ -3631,6 +3758,38 @@
         if (EXT_T[k] == x || (x == '.jpeg' && k == 'image/jpeg'))
             return k; return ''; };
     const mbs = n => (n / 1048576).toFixed(1) + 'MB';
+    /* ===== Androidアプリ版: zipを保存する =====
+       アプリ側(Kotlin)が保存画面を開き、選ばれた場所に、jigsaw.html から少しずつ(1MBずつ)渡したzipを書き込みます */
+    let APP_PICK = null;
+    window.__jigsawPick = ok => { const f = APP_PICK; APP_PICK = null; if (f) f(ok); }; /* 保存画面で場所が選ばれた(true)/キャンセルされた(false)ときに、アプリ側から呼ばれます */
+    const b64 = b => new Promise((ok, ng) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => ng(fr.error); fr.readAsDataURL(b); });
+    async function appSaveZip(fn, z) {
+        const J = window.JigsawApp;
+        const picked = await new Promise(res => { APP_PICK = res; try { J.saveStart(fn); } catch { APP_PICK = null; res(false); } });
+        if (!picked)
+            return toast('キャンセルしました');
+        const CH = 1048576, lb = 'zipを保存しています…';
+        let ok = true;
+        try {
+            for (let p = 0; p < z.size; p += CH) {
+                busy(lb, p, z.size, mbs(p) + ' / ' + mbs(z.size) + '(Googleドライブなどは、このあと端末からアップロードされます)');
+                await tick();
+                if (!J.saveChunk(await b64(z.slice(p, p + CH)))) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok)
+                ok = J.saveEnd();
+        }
+        catch {
+            ok = false;
+        }
+        if (!ok)
+            try { J.saveAbort(); } catch { }
+        busy(false);
+        toast(ok ? 'zipを保存しました' : '保存できませんでした');
+    }
     async function exportZip() {
         if (G)
             await saveNow();
@@ -3657,9 +3816,12 @@
         }
         busy(false);
         const d = new Date(), p2 = n => String(n).padStart(2, '0'), fn = 'jigsaw_backup_' + d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) + '_' + p2(d.getHours()) + p2(d.getMinutes()) + '.zip';
-        const opts = [...(window.showSaveFilePicker ? [['保存先を選んで保存', 'pick']] : []), ['ダウンロード', 'dl']];
-        const v = await choose('<b class="fh">📦 zipを書き出す</b><p>zipを作成しました(画像 ' + imgs.length + ' 枚・パズル ' + sv.length + ' 個・' + mbs(z.size) + ')。</p><p class="em" style="font-size:12px">' + (window.showSaveFilePicker ? '「保存先を選んで保存」で、Googleドライブ' + (MOB ? '(保存先の一覧の「ドライブ」)' : '(パソコン版Googleドライブのフォルダ)') + 'など、好きな場所に保存できます。<br>' : '') + '「ダウンロード」は、ダウンロードのフォルダに保存します。</p>', opts, 'x');
-        if (v == 'pick') {
+        const opts = ANDROID_APP ? [['保存先を選んで保存', 'app']] : [...(window.showSaveFilePicker ? [['保存先を選んで保存', 'pick']] : []), ['ダウンロード', 'dl']];
+        const v = await choose('<b class="fh">📦 zipを書き出す</b><p>zipを作成しました(画像 ' + imgs.length + ' 枚・パズル ' + sv.length + ' 個・' + mbs(z.size) + ')。</p><p class="em" style="font-size:12px">' + (ANDROID_APP ? '「保存先を選んで保存」で、Googleドライブ(保存先の一覧の「ドライブ」)・ダウンロード・端末内の好きなフォルダに保存できます。</p>' : (window.showSaveFilePicker ? '「保存先を選んで保存」で、Googleドライブ' + (MOB ? '(保存先の一覧の「ドライブ」)' : '(パソコン版Googleドライブのフォルダ)') + 'など、好きな場所に保存できます。<br>' : '') + '「ダウンロード」は、ダウンロードのフォルダに保存します。</p>'), opts, 'x');
+        if (v == 'app') {
+            await appSaveZip(fn, z);
+        }
+        else if (v == 'pick') {
             try {
                 const h = await showSaveFilePicker({ suggestedName: fn, types: [{ description: 'zip', accept: { 'application/zip': ['.zip'] } }] });
                 busy('zipを保存しています…', 0, 0, mbs(z.size) + '(Googleドライブなどは、このあと端末からアップロードされます)');
@@ -3788,7 +3950,7 @@
     /* ===== PWA(ホーム画面に追加して使う形) =====
        https で開いたとき(GitHub Pages など)だけ有効にします。PC(file:// や http://localhost)では何もしません。
        必要なファイル: manifest.json / sw.js / icon-192.png / icon-512.png / icon-maskable-512.png(jigsaw.html と同じ場所) */
-    if (location.protocol == 'https:') {
+    if (location.protocol == 'https:' && !ANDROID_APP) { /* Androidアプリの中では、PWAの仕組みは使いません */
         const l = document.createElement('link');
         l.rel = 'manifest';
         l.href = 'manifest.json';
@@ -3808,7 +3970,7 @@
     /* ===== スマホモードの初期設定 ===== */
     async function modeDlg() {
         const cur = { auto: '自動', mob: 'スマホモード', pc: 'PCモード' }[MODE_SET];
-        const v = await choose('<b class="fh">📱 表示モード</b><p>現在: ' + cur + '(' + (MOB ? 'スマホモード' : 'PCモード') + 'で表示中)<br><small class="em">バージョン: ' + APP_VER + '</small></p><p class="em" style="font-size:12px">「自動」は、タッチ操作だけの端末ならスマホモードになります。<br>切り替えると、保存してから画面を読み込み直します。</p>', [['自動', 'auto'], ['スマホモード', 'mob'], ['PCモード', 'pc']], 'x');
+        const v = await choose('<b class="fh">📱 表示モード</b><p>現在: ' + cur + '(' + (MOB ? 'スマホモード' : 'PCモード') + 'で表示中)<br><small class="em">バージョン: ' + APP_VER + (ANDROID_APP ? '(Androidアプリ版 ' + (() => { try { return window.JigsawApp.version(); } catch { return ''; } })() + ')' : '') + '</small></p><p class="em" style="font-size:12px">「自動」は、タッチ操作だけの端末ならスマホモードになります。<br>切り替えると、保存してから画面を読み込み直します。</p>', [['自動', 'auto'], ['スマホモード', 'mob'], ['PCモード', 'pc']], 'x');
         if (v === 'x' || v === MODE_SET)
             return;
         try {
@@ -3868,7 +4030,7 @@
         $('mQ').querySelector('.lb').textContent = ' 保存して一覧へ';
         MT.mQ = '保存して一覧へ';
         mnTips();
-        for (const e of [$('mQ').nextElementSibling, $('mn').querySelector('.nt')].concat(window.showDirectoryPicker ? [] : [$('mF'), $('mF').nextElementSibling, $('sl')]))
+        for (const e of [$('mQ').nextElementSibling, $('mn').querySelector('.nt')].concat(window.showDirectoryPicker || ANDROID_APP ? [] : [$('mF'), $('mF').nextElementSibling, $('sl')]))
             if (e)
                 e.hidden = true; /* 終了時の注意書きは隠します。保存先フォルダは、フォルダを選べるブラウザ(Android の Chrome など)では、PCと同じように使えます */
         $('vImg').querySelector('.hint').innerHTML = 'タイルを長押しして動かすと、並び順を入れ替えられます<br>長押しして離すと、名称変更・削除のボタンが出ます';
