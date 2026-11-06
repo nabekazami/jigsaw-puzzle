@@ -1256,8 +1256,11 @@
       max-height: calc(100% - 20px);
       overflow: auto;
     }
+    html.mob .pm {
+      padding: 2px; /* スマホモード: 2行のメニューでもタイルの中に収まるよう、上下のすき間と行の高さを詰めます(画像一覧・プレイ中のパズル共通) */
+    }
     html.mob .pm button {
-      padding: 10px 14px;
+      padding: 6px 14px;
     }
     /* スマホモード: パズルエリアをできるだけ広くする(左メニューの格納時の幅・パズルエリアの周りの余白を詰める) */
     html.mob #mn.cl {
@@ -1520,7 +1523,7 @@
     /* ===== スマホモード =====
        タッチ操作だけの端末(スマホ・タブレット)では、自動でスマホモードになります。
        左メニューの「表示モード」(スマホモード時)、またはURLの末尾の mode=mobile / mode=pc / mode=auto で手動切り替えできます(端末ごとに記憶)。 */
-    const APP_VER = '2026-11-07 b'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
+    const APP_VER = '2026-11-07 e'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
     const MODE_KEY = 'jigsaw_mode';
     let MODE_SET = 'auto';
     try {
@@ -1665,13 +1668,15 @@
             x.textContent = '✕';
             x.title = pl ? 'このパズルを削除' : 'この画像を削除';
             x.onclick = async (e) => { e.stopPropagation(); if (pl) {
-                if (await choose('このパズルを削除しますか?<br>※ 削除したパズルは、元に戻せません。', [['はい', 1], ['いいえ', 0]])) {
+                const q = choose('<div class="pv"><img src="' + im.url + '"></div><p>このパズル(<span class="nm"></span>・' + s.n + 'ピース・' + (s.done ? '完成済み' : '進捗' + Math.round(s.prog * 100) + '%') + ')を削除しますか?<br>※ 削除したパズルは、元に戻せません。</p>', [['はい', 1], ['いいえ', 0]], undefined, true);
+                $('mb').querySelector('.nm').textContent = s.name || im.name; /* 名称は文字として入れます(記号が入っていても表示が崩れないように) */
+                if (await q) {
                     await ST.delSave(s.id);
                     delete saves[s.id];
                     show('Pl');
                 }
             }
-            else if (await choose('この画像と、この画像のパズルをすべて削除しますか?<br>※ 削除した画像とパズルは、元に戻せません。', [['はい', 1], ['いいえ', 0]])) {
+            else if (await (() => { const q = choose('<div class="pv"><img src="' + im.url + '"></div><p>この画像(<span class="nm"></span>)と、この画像のパズルをすべて削除しますか?<br>※ 削除した画像とパズルは、元に戻せません。</p>', [['はい', 1], ['いいえ', 0]], undefined, true); $('mb').querySelector('.nm').textContent = im.name; return q; })()) {
                 for (const k of Object.values(saves))
                     if (k.img == im.id) {
                         await ST.delSave(k.id);
@@ -1795,7 +1800,7 @@
         const btn = (txt, f) => { const e = document.createElement('button'); e.className = 'sm'; e.textContent = txt; e.onclick = ev => { ev.stopPropagation(); f(); }; b.append(e); };
         btn('✏ 名称を変更', () => { clearSel(); rename(im, sv || undefined); });
         if (sv)
-            btn('📋 パズルコピー', () => { clearSel(); copyPuzzle(id); });
+            btn('📋 パズルコピー', () => { clearSel(); askCopy(id); });
         btn('🗑 削除', () => { const x = t.querySelector('.x'); clearSel(); if (x)
             x.click(); });
         btn('✕', clearSel);
@@ -1871,7 +1876,34 @@
         DG.cur = dgNext(cur, C, tid, end);
         el.querySelectorAll('.tile').forEach(x => { x.style.order = DG.cur.indexOf(x.dataset.id); });
     }
-    function plMenu(sv, b) { HD.querySelectorAll('.pm').forEach(e => e.remove()); const m = document.createElement('div'); m.className = 'pm'; [['✏ 名称を変更', () => rename(imgs.find(i => i.id == sv.img), sv)], ['📋 パズルコピー', () => copyPuzzle(sv.id)]].forEach(([t, f]) => { const i = document.createElement('button'); i.textContent = t; i.onclick = e => { e.stopPropagation(); m.remove(); f(); }; m.append(i); }); b.parentNode.append(m); setTimeout(() => RWIN.addEventListener('click', () => m.remove(), { once: true })); }
+    /* タイルの「⋯」のメニュー(画像一覧・プレイ中のパズル共通)
+       ・同じタイルの「⋯」をもう一度押すと、メニューを閉じます。
+       ・メニューは「⋯」のすぐ下(4px下)から出します(「⋯」と重ならないように)。 */
+    function tileMenu(b, items) {
+        const own = b.parentNode.querySelector('.pm');
+        HD.querySelectorAll('.pm').forEach(e => e.remove());
+        if (own)
+            return; /* 開いていたメニューを閉じるだけ */
+        const m = document.createElement('div');
+        m.className = 'pm';
+        m.style.top = (b.offsetTop + b.offsetHeight + 4) + 'px';
+        items.forEach(([t, f]) => { const i = document.createElement('button'); i.textContent = t; i.onclick = e => { e.stopPropagation(); m.remove(); f(); }; m.append(i); });
+        b.parentNode.append(m);
+        setTimeout(() => RWIN.addEventListener('click', () => m.remove(), { once: true }));
+    }
+    function plMenu(sv, b) { tileMenu(b, [['✏ 名称を変更', () => rename(imgs.find(i => i.id == sv.img), sv)], ['📋 パズルコピー', () => askCopy(sv.id)]]); }
+    /* パズルコピーの確認(「⋯」のメニューと、スマホモードの長押しで出るボタンから。PCの Ctrl+ドラッグは確認なし) */
+    async function askCopy(id) {
+        const sv = saves[id], im = sv && imgs.find(i => i.id == sv.img);
+        if (!sv || !im)
+            return;
+        const nm = sv.name || im.name;
+        const p = choose('<div class="pv"><img src="' + im.url + '"></div><p>このパズル(<span class="nm"></span>・' + sv.n + 'ピース・' + (sv.done ? '完成済み' : '進捗' + Math.round(sv.prog * 100) + '%') + ')をコピーしますか?<br>コピーの名称: 「<span class="cn"></span>」</p>', [['はい', 1], ['いいえ', 0]], undefined, true);
+        $('mb').querySelector('.nm').textContent = nm;
+        $('mb').querySelector('.cn').textContent = nm + ' - コピー';
+        if (await p)
+            copyPuzzle(id);
+    }
     async function copyPuzzle(id, order) {
         /* パズルのコピー(進行状況もそのままコピー)。名称は「元の名称 - コピー」 */
         const src = saves[id];
@@ -1915,8 +1947,8 @@
         SET.sort[v] = 'manual';
         saveSet();
     } renderList(v); }
-    function imgMenu(im, b) { HD.querySelectorAll('.pm').forEach(e => e.remove()); const m = document.createElement('div'); m.className = 'pm'; [['✏ 名称を変更', () => rename(im)]].forEach(([t, f]) => { const i = document.createElement('button'); i.textContent = t; i.onclick = e => { e.stopPropagation(); m.remove(); f(); }; m.append(i); }); b.parentNode.append(m); setTimeout(() => RWIN.addEventListener('click', () => m.remove(), { once: true })); }
-    async function rename(im, sv) { const cur = sv ? (sv.name || im.name) : im.name; const q = choose('<b>名称を変更</b><p><input id="rn" style="width:100%;box-sizing:border-box;padding:6px" maxlength="60"></p>', [['変更', 1], ['キャンセル', 0]]); $('rn').value = cur; $('rn').focus(); $('rn').select(); $('rn').onkeydown = e => { if (e.key == 'Enter' && !e.isComposing && e.keyCode != 229) {
+    function imgMenu(im, b) { tileMenu(b, [['✏ 名称を変更', () => rename(im)]]); }
+    async function rename(im, sv) { const cur = sv ? (sv.name || im.name) : im.name; const q = choose('<b>名称を変更</b><p><input id="rn" style="width:100%;box-sizing:border-box;padding:6px" maxlength="60"></p>', [['変更', 1], ['キャンセル', 0]], undefined, true); $('rn').value = cur; $('rn').focus(); $('rn').select(); $('rn').onkeydown = e => { if (e.key == 'Enter' && !e.isComposing && e.keyCode != 229) {
         e.preventDefault();
         $('mb').querySelector('.pr').click();
     } }; const v = await q, n = $('rn').value.trim(); if (v && n && n != cur) {
