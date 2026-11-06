@@ -146,6 +146,9 @@
     #mn button:hover {
       background: var(--ln);
     }
+    html.mob #mn button:not(.on):hover {
+      background: none; /* スマホモード: タッチの端末では、最後にタップしたボタンに「マウスを乗せたときの色」が残るため、付けません */
+    }
     #mn button.on {
       background: var(--ac);
       color: #fff;
@@ -1517,7 +1520,7 @@
     /* ===== スマホモード =====
        タッチ操作だけの端末(スマホ・タブレット)では、自動でスマホモードになります。
        左メニューの「表示モード」(スマホモード時)、またはURLの末尾の mode=mobile / mode=pc / mode=auto で手動切り替えできます(端末ごとに記憶)。 */
-    const APP_VER = '2026-11-07 a'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
+    const APP_VER = '2026-11-07 b'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
     const MODE_KEY = 'jigsaw_mode';
     let MODE_SET = 'auto';
     try {
@@ -3987,9 +3990,9 @@
     /* ===== スマホモードの初期設定 ===== */
     async function modeDlg() {
         if (ANDROID_APP)
-            return choose('<b class="fh">📱 表示モード</b><p>Androidアプリ版は、常にスマホモードで表示します。<br><small class="em">バージョン: ' + APP_VER + '(Androidアプリ版 ' + (() => { try { return window.JigsawApp.version(); } catch { return ''; } })() + ')</small></p>', [], 'x'); /* PCモードには切り替えません(バージョンの確認用) */
+            return choose('<b class="fh">📱 表示モード</b><p>Androidアプリ版は、常にスマホモードで表示します。<br><small class="em">バージョン: ' + APP_VER + '(Androidアプリ版 ' + (() => { try { return window.JigsawApp.version(); } catch { return ''; } })() + ')</small></p>', [], 'x', true); /* PCモードには切り替えません(バージョンの確認用) */
         const cur = { auto: '自動', mob: 'スマホモード', pc: 'PCモード' }[MODE_SET];
-        const v = await choose('<b class="fh">📱 表示モード</b><p>現在: ' + cur + '(' + (MOB ? 'スマホモード' : 'PCモード') + 'で表示中)<br><small class="em">バージョン: ' + APP_VER + (ANDROID_APP ? '(Androidアプリ版 ' + (() => { try { return window.JigsawApp.version(); } catch { return ''; } })() + ')' : '') + '</small></p><p class="em" style="font-size:12px">「自動」は、タッチ操作だけの端末ならスマホモードになります。<br>切り替えると、保存してから画面を読み込み直します。</p>', [['自動', 'auto'], ['スマホモード', 'mob'], ['PCモード', 'pc']], 'x');
+        const v = await choose('<b class="fh">📱 表示モード</b><p>現在: ' + cur + '(' + (MOB ? 'スマホモード' : 'PCモード') + 'で表示中)<br><small class="em">バージョン: ' + APP_VER + (ANDROID_APP ? '(Androidアプリ版 ' + (() => { try { return window.JigsawApp.version(); } catch { return ''; } })() + ')' : '') + '</small></p><p class="em" style="font-size:12px">「自動」は、タッチ操作だけの端末ならスマホモードになります。<br>切り替えると、保存してから画面を読み込み直します。</p>', [['自動', 'auto'], ['スマホモード', 'mob'], ['PCモード', 'pc']], 'x', true);
         if (v === 'x' || v === MODE_SET)
             return;
         try {
