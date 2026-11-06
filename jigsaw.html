@@ -1517,7 +1517,7 @@
     /* ===== スマホモード =====
        タッチ操作だけの端末(スマホ・タブレット)では、自動でスマホモードになります。
        左メニューの「表示モード」(スマホモード時)、またはURLの末尾の mode=mobile / mode=pc / mode=auto で手動切り替えできます(端末ごとに記憶)。 */
-    const APP_VER = '2026-11-06 g'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
+    const APP_VER = '2026-11-07 a'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
     const MODE_KEY = 'jigsaw_mode';
     let MODE_SET = 'auto';
     try {
@@ -1569,9 +1569,10 @@
     } return a; };
     const fmt = t => (t / 60 | 0) + ':' + String(t % 60).padStart(2, '0');
     function toast(t) { const e = $('ts'); e.textContent = t; e.hidden = false; clearTimeout(tm); tm = setTimeout(() => e.hidden = true, 2600); }
-    function choose(html, opts, x) {
+    function choose(html, opts, x, out) {
         return new Promise(r => {
             $('mb').innerHTML = html + '<div class="bs"></div>';
+            $('mb').dataset.out = out ? '1' : ''; /* out=true: ウインドウの外をクリック/タップすると、キャンセル(Esc・✕と同じ)で閉じます */
             $('mb').dataset.esc = x === undefined ? 'last' : x === null ? 'none' : 'x'; /* x: 省略=Escで最後の選択肢 / null=Escでも閉じない / 値=右上に✕ボタンを付け、Esc・✕でその値を返す */
             if (x !== undefined && x !== null) {
                 const c = document.createElement('button');
@@ -1981,7 +1982,7 @@
     const PMAX = MOB ? MOB_PMAX : 5000; /* 任意で設定できる最大ピース数(スマホモードは MOB_PMAX) */
     async function openStart(id) {
         const im = imgs.find(i => i.id == id);
-        const p = choose('<div class="pv"><img src="' + im.url + '"></div><p>この画像でパズルを新しく開始しますか?<br><span class="nm"></span></p><p class="em" style="margin:0 0 6px;font-size:12px">ピース数の目安を選んでください<br>(画像の縦横比に合わせて、実際の枚数は前後します)</p><label>ピース数(目安): <select id="sz">' + [100, 200, 500, 1000, 1500, 2000, 3000].filter(n => n <= PMAX).map(n => '<option>' + n + '</option>').join('') + '<option value="x">任意</option></select> <input id="cu" type="number" min="9" max="' + PMAX + '" value="300" hidden style="width:80px"> <span id="cm" class="em" hidden style="font-size:12px">(最大 ' + PMAX + ' ピース)</span></label><p style="margin:10px 0 0"><label><input type="checkbox" id="rr"> ピースの向き(上下左右)をランダムにする</label></p>', [['はい', 1], ['いいえ', 0]]);
+        const p = choose('<div class="pv"><img src="' + im.url + '"></div><p>この画像でパズルを新しく開始しますか?<br><span class="nm"></span></p><p class="em" style="margin:0 0 6px;font-size:12px">ピース数の目安を選んでください<br>(画像の縦横比に合わせて、実際の枚数は前後します)</p><label>ピース数(目安): <select id="sz">' + [100, 200, 500, 1000, 1500, 2000, 3000].filter(n => n <= PMAX).map(n => '<option>' + n + '</option>').join('') + '<option value="x">任意</option></select> <input id="cu" type="number" min="9" max="' + PMAX + '" value="300" hidden style="width:80px"> <span id="cm" class="em" hidden style="font-size:12px">(最大 ' + PMAX + ' ピース)</span></label><p style="margin:10px 0 0"><label><input type="checkbox" id="rr"> ピースの向き(上下左右)をランダムにする</label></p>', [['はい', 1], ['いいえ', 0]], undefined, true);
         $('mb').querySelector('.nm').textContent = im.name;
         $('sz').onchange = e => { $('cu').hidden = $('cm').hidden = e.target.value != 'x'; }; /* 任意の入力: 最大ピース数を超えたら、最大ピース数に強制的に変更 */
         $('cu').oninput = () => { if (+$('cu').value > PMAX)
@@ -1997,7 +1998,7 @@
     }
     async function openCont(pid) {
         const sv = saves[pid], im = imgs.find(i => i.id == sv.img);
-        const p = choose('<div class="pv"><img src="' + im.url + '"></div><p>このパズル(<span class="nm"></span>・' + sv.n + 'ピース・' + (sv.done ? '完成済み' : '進捗' + Math.round(sv.prog * 100) + '%') + ')' + (sv.done ? 'を開きますか?' : 'の続きをしますか?') + '</p>', [['はい', 1], ['いいえ', 0]]);
+        const p = choose('<div class="pv"><img src="' + im.url + '"></div><p>このパズル(<span class="nm"></span>・' + sv.n + 'ピース・' + (sv.done ? '完成済み' : '進捗' + Math.round(sv.prog * 100) + '%') + ')' + (sv.done ? 'を開きますか?' : 'の続きをしますか?') + '</p>', [['はい', 1], ['いいえ', 0]], undefined, true);
         $('mb').querySelector('.nm').textContent = sv.name || im.name;
         if (await p)
             startGame(sv.img, sv);
@@ -2943,6 +2944,20 @@
             b[b.length - 1].click();
     } };
     addEventListener('keydown', escH);
+    /* ウインドウの外(暗くなった部分)をクリック/タップしたら、キャンセルで閉じます(out を指定した確認ウインドウだけ)。
+       押したときと離したときの両方が外側のときだけ閉じます(ウインドウの中から外へドラッグしたときは閉じません)。
+       暗くなった部分が画面全体を覆っているため、下にあるタイルや ✕・⋯ には、クリック/タップが届きません。 */
+    let MD_DOWN = false;
+    $('md').addEventListener('pointerdown', e => { MD_DOWN = e.target === $('md'); });
+    $('md').addEventListener('click', e => {
+        const hit = MD_DOWN && e.target === $('md');
+        MD_DOWN = false;
+        if (!hit || $('mb').dataset.out != '1')
+            return;
+        e.preventDefault();
+        e.stopPropagation();
+        escH({ key: 'Escape' });
+    });
     cv.addEventListener('mousedown', e => { if (e.button == 1)
         e.preventDefault(); });
     $('zf').onclick = () => G && fitAll();
@@ -3384,7 +3399,7 @@
             h = ANDROID_APP ? appPrev() : await getK('dir');
         }
         catch { }
-        const p = choose(folderHtml(), folderOpts(h), 'x');
+        const p = choose(folderHtml(), folderOpts(h), 'x', true);
         folderFill(h);
         const v = await p;
         if (v === 'x')
@@ -3939,7 +3954,7 @@
         toast('読み込みました: 画像 +' + ni + ' / パズル +' + ns + '・上書き ' + us + (sk ? '(こちらが新しいため、そのまま ' + sk + ')' : '') + (st ? ' / 設定を更新' : ''));
     }
     async function dataDlg() {
-        const v = await choose('<b class="fh">📦 データの受け渡し</b><p>画像とパズルの進行状況を、zipにまとめて書き出したり、読み込んだりします。<br>PC・スマホ・タブレットの間で、データを受け渡すときに使います。</p><p class="em" style="font-size:12px">読み込むときは、同じパズルがあれば、更新日時が新しい方だけを上書きします。<br>こちらにしかない画像やパズルは、消えずにそのまま残ります。</p>', [['書き出し(zipを作る)', 'ex'], ['読み込み(zipを選ぶ)', 'im']], 'x');
+        const v = await choose('<b class="fh">📦 データの受け渡し</b><p>画像とパズルの進行状況を、zipにまとめて書き出したり、読み込んだりします。<br>PC・スマホ・タブレットの間で、データを受け渡すときに使います。</p><p class="em" style="font-size:12px">読み込むときは、同じパズルがあれば、更新日時が新しい方だけを上書きします。<br>こちらにしかない画像やパズルは、消えずにそのまま残ります。</p>', [['書き出し(zipを作る)', 'ex'], ['読み込み(zipを選ぶ)', 'im']], 'x', true);
         if (v == 'ex')
             exportZip();
         else if (v == 'im')
