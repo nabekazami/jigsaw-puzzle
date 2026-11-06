@@ -1517,7 +1517,7 @@
     /* ===== スマホモード =====
        タッチ操作だけの端末(スマホ・タブレット)では、自動でスマホモードになります。
        左メニューの「表示モード」(スマホモード時)、またはURLの末尾の mode=mobile / mode=pc / mode=auto で手動切り替えできます(端末ごとに記憶)。 */
-    const APP_VER = '2026-11-06 f'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
+    const APP_VER = '2026-11-06 g'; /* jigsaw.html のバージョン(「表示モード」の画面に表示。更新したときに、新しいファイルが読み込まれたかの確認用) */
     const MODE_KEY = 'jigsaw_mode';
     let MODE_SET = 'auto';
     try {
@@ -1544,7 +1544,7 @@
     } })();
     /* Androidアプリ(WebView)の中で開かれたときは、アプリ側が window.JigsawApp を用意します。PC版・PWA版では false です */
     const ANDROID_APP = !!window.JigsawApp;
-    const MOB = MODE_SET == 'mob' || (MODE_SET == 'auto' && TOUCH_DEV);
+    const MOB = ANDROID_APP || MODE_SET == 'mob' || (MODE_SET == 'auto' && TOUCH_DEV); /* Androidアプリ版は、常にスマホモードです */
     const PHONE = Math.min(screen.width, screen.height) < 600; /* 画面の短い辺が600px未満ならスマホ、それ以上はタブレット */
     const MOB_PMAX = PHONE ? 1000 : 1000; /* スマホモードのピース数の上限(スマホ / タブレット) */
     const MOB_DPR = 1.5; /* スマホモードの描画の細かさの上限(大きいほどきれい・重い) */
@@ -1587,7 +1587,9 @@
         });
     }
     /* 画面 */
-    function show(v) { if (v != 'Gm' && G) {
+    function show(v) { if (ANDROID_APP)
+        try { window.JigsawApp.keepOn(v == 'Gm'); } catch { } /* Androidアプリ版: ゲーム画面の間だけ、画面を点けたままにします */
+    if (v != 'Gm' && G) {
         saveNow();
         G = null;
     } ['Img', 'Pl', 'Gm'].forEach(k => $('v' + k).hidden = k != v); $('mI').classList.toggle('on', v == 'Img'); $('mP').classList.toggle('on', v == 'Pl'); if (v == 'Img' || v == 'Pl')
@@ -3969,6 +3971,8 @@
     }
     /* ===== スマホモードの初期設定 ===== */
     async function modeDlg() {
+        if (ANDROID_APP)
+            return choose('<b class="fh">📱 表示モード</b><p>Androidアプリ版は、常にスマホモードで表示します。<br><small class="em">バージョン: ' + APP_VER + '(Androidアプリ版 ' + (() => { try { return window.JigsawApp.version(); } catch { return ''; } })() + ')</small></p>', [], 'x'); /* PCモードには切り替えません(バージョンの確認用) */
         const cur = { auto: '自動', mob: 'スマホモード', pc: 'PCモード' }[MODE_SET];
         const v = await choose('<b class="fh">📱 表示モード</b><p>現在: ' + cur + '(' + (MOB ? 'スマホモード' : 'PCモード') + 'で表示中)<br><small class="em">バージョン: ' + APP_VER + (ANDROID_APP ? '(Androidアプリ版 ' + (() => { try { return window.JigsawApp.version(); } catch { return ''; } })() + ')' : '') + '</small></p><p class="em" style="font-size:12px">「自動」は、タッチ操作だけの端末ならスマホモードになります。<br>切り替えると、保存してから画面を読み込み直します。</p>', [['自動', 'auto'], ['スマホモード', 'mob'], ['PCモード', 'pc']], 'x');
         if (v === 'x' || v === MODE_SET)
@@ -3986,6 +3990,56 @@
         setTimeout(() => location.reload(), 100);
     }
     $('mM').onclick = modeDlg;
+    /* ===== Androidアプリ版: 戻る操作 =====
+       アプリ側から呼ばれます。開いているものを1つ閉じるか、ゲーム画面なら保存して一覧へ戻ります。
+       一覧の画面では「もう一度押すと終了します」と出し、2秒以内にもう一度押したら保存して閉じます。
+       左メニュー・右パネルの開閉は、戻る操作では変えません。 */
+    let BACK_T = 0;
+    window.__jigsawBack = () => {
+        if (!$('busy').hidden || !$('gate').hidden)
+            return 'handled'; /* 作業中は何もしません */
+        if (!$('md').hidden) {
+            escH({ key: 'Escape' }); /* 確認ウインドウ: ✕・Escと同じ(閉じられない画面は何もしません) */
+            return 'handled';
+        }
+        const pm = HD.querySelectorAll('.pm');
+        if (pm.length) {
+            pm.forEach(e => e.remove());
+            return 'handled';
+        }
+        if (SELT) {
+            clearSel();
+            return 'handled';
+        }
+        if (!$('bgp').hidden) {
+            closeBg();
+            return 'handled';
+        }
+        if (SELM) {
+            setSelm(false);
+            return 'handled';
+        }
+        if (!$('vGm').hidden) {
+            $('zc').click(); /* 保存して、プレイ中のパズル一覧へ */
+            return 'handled';
+        }
+        const now = Date.now();
+        if (now - BACK_T < 2000) {
+            BACK_T = 0;
+            (async () => { try {
+                await saveNow();
+                await ST.putSet(SET);
+            }
+            catch { } try {
+                window.JigsawApp.exitApp();
+            }
+            catch { } })();
+            return 'handled';
+        }
+        BACK_T = now;
+        toast('もう一度押すと終了します');
+        return 'handled';
+    };
     if (MOB) {
         try {
             document.querySelector('meta[name=viewport]').content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
